@@ -37,7 +37,24 @@ button{border:0;border-radius:10px;padding:10px 13px;font-size:14px;font-weight:
 .staff-row{display:grid;grid-template-columns:1.1fr 1fr .8fr .8fr auto;gap:7px;align-items:end}
 .exp-row{display:grid;grid-template-columns:1.3fr .8fr auto;gap:7px;align-items:end}
 .reserve-row{display:grid;grid-template-columns:1.1fr .6fr 1fr auto;gap:7px;align-items:end}
-.time-row{display:grid;grid-template-columns:.7fr 1.2fr 1fr auto;gap:7px;align-items:end}
+.time-row{display:grid;grid-template-columns:.7fr 1.2fr 1fr 1fr 1fr auto;gap:7px;align-items:end}
+.setlist-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.print-sheet{display:none}
+@media print{
+  body>*:not(#printSheet){display:none!important}
+  #printSheet{display:block!important;padding:18mm 14mm;color:#111;background:#fff;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif}
+  #printSheet h1{font-size:20px;margin:0 0 4px}
+  #printSheet h2{font-size:16px;margin:0 0 12px}
+  #printSheet .print-meta{font-size:11px;color:#555;margin-bottom:14px}
+  #printSheet table{width:100%;border-collapse:collapse;font-size:12px}
+  #printSheet th,#printSheet td{border:1px solid #333;padding:7px 8px;text-align:left}
+  #printSheet th{font-weight:800;background:#f3f4f6}
+  #printSheet .no{width:9%;text-align:center}
+  #printSheet .time{width:14%;text-align:center}
+  #printSheet .cue{width:18%}
+  @page{size:A4 portrait;margin:0}
+}
+
 .result-box{background:#f8fafc;border-radius:9px;padding:10px;font-weight:800}
 .timetable{position:relative}
 .timeline-item{position:relative;padding:13px 12px 13px 18px;border:1px solid var(--line);border-radius:12px;margin:9px 0;background:#fff}
@@ -153,6 +170,10 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
   <hr>
   <div class="between"><h3>📣 当日のタイムライン</h3><button class="secondary smallbtn" onclick="renderTimeline()">↻ 更新</button></div>
   <div id="timeline" class="timetable"></div>
+  <hr>
+  <div class="between"><h3>🖨️ セトリ印刷</h3><span class="badge">CD番号は印刷されません</span></div>
+  <p class="muted">セトリだけをA4の表で印刷できます。印刷には「時間・出演者／内容・きっかけ」のみ載ります。</p>
+  <div id="setlistPrintButtons" class="setlist-actions"></div>
 </section>
 
 <section class="card">
@@ -194,6 +215,7 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
     <button class="secondary" onclick="window.scrollTo({top:0,behavior:'smooth'})">⬆️ 上へ</button>
   </div>
 </div>
+<div id="printSheet" class="print-sheet"></div>
 
 <script>
 const KEY='liveOrganizerMultiV2';
@@ -225,7 +247,7 @@ function addPerformer(d={}){state.performers.push({id:uid(),name:'',quota:10,sol
 function addStaff(d={}){state.staff.push({id:uid(),name:'',role:'',day:0,travel:0,...d});renderAll()}
 function addExpense(d={}){state.expenses.push({id:uid(),name:'',amount:0,...d});renderAll()}
 function addReservation(d={}){state.reservations.push({id:uid(),name:'',count:1,from:'',checked:false,...d});renderAll()}
-function addTimetable(d={}){state.timetable.push({id:uid(),time:'18:00',who:'',note:'',part:1,...d});renderAll()}
+function addTimetable(d={}){state.timetable.push({id:uid(),time:'18:00',who:'',cdNo:'',cue:'',note:'',part:1,...d});renderAll()}
 
 function removeItem(type,id){
   state[type]=state[type].filter(x=>x.id!==id); renderAll();
@@ -306,16 +328,101 @@ function renderReservations(){
 }
 function renderTimetableEdit(){
   const box=document.getElementById('timetableEdit');
-  if(!state.timetable.length){box.innerHTML='<p class="muted">まだ出番がありません。</p>';return}
+  if(!state.timetable.length){box.innerHTML='<p class="muted">まだ出番がありません。</p>';renderSetlistPrintButtons();return}
   const parts=Number(state.event.parts)||1;
-  const arr=[...state.timetable].map(t=>({...t,part:Number(t.part)||1})).sort((a,b)=>(a.part-b.part)||String(a.time).localeCompare(String(b.time)));
+  const arr=[...state.timetable].map(t=>({...t,part:Number(t.part)||1,cdNo:t.cdNo||'',cue:t.cue||''})).sort((a,b)=>(a.part-b.part)||String(a.time).localeCompare(String(b.time)));
   box.innerHTML=arr.map((t,i)=>`<div class="item"><div class="time-row">
     ${parts===2?`<div><label>部</label><select onchange="update('timetable','${t.id}','part',num(this.value));renderAll()"><option value="1" ${t.part===1?'selected':''}>第1部</option><option value="2" ${t.part===2?'selected':''}>第2部</option></select></div>`:''}
     <div><label>時間</label><input type="time" value="${esc(t.time)}" onchange="update('timetable','${t.id}','time',this.value)"></div>
     <div><label>出演者・内容</label><input value="${esc(t.who)}" oninput="update('timetable','${t.id}','who',this.value)"></div>
+    <div><label>CD番号（管理用）</label><input placeholder="CD-01" value="${esc(t.cdNo)}" oninput="update('timetable','${t.id}','cdNo',this.value)"></div>
+    <div><label>きっかけ</label><select onchange="update('timetable','${t.id}','cue',this.value)"><option value="" ${!t.cue?'selected':''}>選択してください</option><option value="板付き" ${t.cue==='板付き'?'selected':''}>板付き</option><option value="音先" ${t.cue==='音先'?'selected':''}>音先</option><option value="TC" ${t.cue==='TC'?'selected':''}>TC</option></select></div>
     <div><label>メモ</label><input value="${esc(t.note)}" oninput="update('timetable','${t.id}','note',this.value)"></div>
     <button class="danger smallbtn" onclick="removeItem('timetable','${t.id}')">削除</button>
   </div></div>`).join('');
+  renderSetlistPrintButtons();
+}
+function renderSetlistPrintButtons(){
+  const box=document.getElementById('setlistPrintButtons');
+  if(!box)return;
+  const parts=Number(state.event.parts)||1;
+  box.innerHTML=parts===2
+    ? '<button class="primary smallbtn" onclick="printSetlist(1)">🖨️ 第1部 セトリ</button><button class="green smallbtn" onclick="shareSetlistImage(1)">🖼️ 第1部 画像共有</button><button class="primary smallbtn" onclick="printSetlist(2)">🖨️ 第2部 セトリ</button><button class="green smallbtn" onclick="shareSetlistImage(2)">🖼️ 第2部 画像共有</button>'
+    : '<button class="primary smallbtn" onclick="printSetlist(1)">🖨️ セトリ印刷</button><button class="green smallbtn" onclick="shareSetlistImage(1)">🖼️ セトリ画像共有</button>';
+}
+function getSetlistRows(part){
+  const parts=Number(state.event.parts)||1;
+  const target=parts===2?Number(part)||1:1;
+  return [...state.timetable]
+    .map(t=>({...t,part:Number(t.part)||1,cue:t.cue||''}))
+    .filter(t=>(parts===1?true:t.part===target))
+    .filter(t=>t.time || t.who || t.cue)
+    .sort((a,b)=>String(a.time).localeCompare(String(b.time)));
+}
+async function shareSetlistImage(part){
+  const parts=Number(state.event.parts)||1;
+  const target=parts===2?Number(part)||1:1;
+  const rows=getSetlistRows(target);
+  const title=parts===2?`第${target}部 SET LIST`:'SET LIST';
+  const width=1400, rowH=88, headerH=230, footerH=70;
+  const height=Math.max(520,headerH+Math.max(rows.length,1)*rowH+footerH);
+  const canvas=document.createElement('canvas'); canvas.width=width; canvas.height=height;
+  const ctx=canvas.getContext('2d');
+  ctx.fillStyle='#fff'; ctx.fillRect(0,0,width,height);
+  ctx.fillStyle='#111'; ctx.textBaseline='middle';
+  const font='-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif';
+  ctx.font=`800 42px ${font}`; ctx.fillText(state.event.name||'ライブ',70,62);
+  ctx.font=`700 30px ${font}`; ctx.fillText(title,70,120);
+  ctx.font=`24px ${font}`; ctx.fillStyle='#555';
+  ctx.fillText(`${state.event.date||''}${state.event.venue?'　'+state.event.venue:''}`,70,170);
+  const x=[70,180,410,1010,1330];
+  const widths=[110,230,600,320];
+  const y0=205;
+  ctx.fillStyle='#f1f3f5'; ctx.fillRect(x[0],y0,widths.reduce((a,b)=>a+b,0),rowH);
+  ctx.strokeStyle='#333'; ctx.lineWidth=2;
+  ctx.font=`800 25px ${font}`; ctx.fillStyle='#111';
+  ['No.','時間','出演者・内容','きっかけ'].forEach((v,i)=>ctx.fillText(v,x[i]+16,y0+rowH/2));
+  let y=y0+rowH;
+  ctx.font=`500 25px ${font}`;
+  if(!rows.length){
+    ctx.strokeRect(x[0],y,widths.reduce((a,b)=>a+b,0),rowH); ctx.fillText('セトリがありません。',x[0]+16,y+rowH/2);
+  } else {
+    rows.forEach((r,i)=>{
+      ctx.fillStyle='#fff'; ctx.fillRect(x[0],y,widths.reduce((a,b)=>a+b,0),rowH);
+      ctx.strokeStyle='#333'; ctx.strokeRect(x[0],y,widths.reduce((a,b)=>a+b,0),rowH);
+      ctx.fillStyle='#111';
+      ctx.fillText(String(i+1),x[0]+38,y+rowH/2);
+      ctx.fillText(r.time||'',x[1]+16,y+rowH/2);
+      ctx.fillText(r.who||'',x[2]+16,y+rowH/2);
+      ctx.fillText(r.cue||'',x[3]+16,y+rowH/2);
+      [x[1],x[2],x[3]].forEach(xx=>{ctx.beginPath();ctx.moveTo(xx,y);ctx.lineTo(xx,y+rowH);ctx.stroke();});
+      y+=rowH;
+    });
+  }
+  ctx.fillStyle='#777'; ctx.font=`20px ${font}`; ctx.fillText('CD番号は管理用のため画像には表示されません',70,height-30);
+  canvas.toBlob(async blob=>{
+    if(!blob){alert('画像を作成できませんでした。');return;}
+    const safe=(state.event.name||'setlist').replace(/[\\/:*?"<>|]/g,'_');
+    const file=new File([blob],`${safe}_${parts===2?`第${target}部_`:''}setlist.png`,{type:'image/png'});
+    try{
+      if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
+        await navigator.share({title:`${state.event.name||'ライブ'} ${title}`,text:'セトリ',files:[file]});
+      }else{
+        const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=file.name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+        alert('画像を保存しました。写真やファイルから共有できます。');
+      }
+    }catch(e){ if(e && e.name!=='AbortError') alert('画像共有を完了できませんでした。'); }
+  },'image/png');
+}
+function printSetlist(part){
+  const parts=Number(state.event.parts)||1;
+  const target=parts===2?Number(part)||1:1;
+  const rows=getSetlistRows(target);
+  const title=parts===2?`第${target}部 SET LIST`:'SET LIST';
+  const rowsHtml=rows.length?rows.map((t,i)=>`<tr><td class="no">${i+1}</td><td class="time">${esc(t.time||'')}</td><td>${esc(t.who||'')}</td><td class="cue">${esc(t.cue||'')}</td></tr>`).join(''):'<tr><td colspan="4" style="text-align:center">セトリがありません。</td></tr>';
+  const sheet=document.getElementById('printSheet');
+  sheet.innerHTML=`<h1>${esc(state.event.name||'ライブ')}</h1><div class="print-meta">${esc(state.event.date||'')} ${esc(state.event.venue||'')}</div><h2>${title}</h2><table><thead><tr><th class="no">No.</th><th class="time">時間</th><th>出演者・内容</th><th class="cue">きっかけ</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+  window.print();
 }
 function renderTimeline(){
   const box=document.getElementById('timeline');
@@ -397,7 +504,7 @@ function load(){
   state=currentProject().state;
   state.event=state.event||{};
   state.event.parts=Number(state.event.parts)||1;
-  state.timetable=(state.timetable||[]).map(t=>({...t,part:Number(t.part)||1}));
+  state.timetable=(state.timetable||[]).map(t=>({...t,part:Number(t.part)||1,cdNo:t.cdNo||'',cue:t.cue||''}));
   if(state.event.parts===1)state.timetable.forEach(t=>t.part=1);
   renderAll();
 }
