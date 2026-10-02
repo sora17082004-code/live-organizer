@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ライブ主催">
+<title>ライブ主催ツール</title>
+<style>
+:root{--bg:#f3f4f6;--card:#fff;--text:#111827;--muted:#6b7280;--line:#e5e7eb;--primary:#111827;--soft:#f8fafc;--accent:#2563eb;--danger:#dc2626;--ok:#059669}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;-webkit-text-size-adjust:100%}
+header{position:sticky;top:0;z-index:20;background:rgba(17,24,39,.97);color:#fff;padding:14px 14px calc(14px + env(safe-area-inset-top));padding-top:calc(14px + env(safe-area-inset-top))}
+header h1{margin:0;font-size:20px} header p{margin:4px 0 0;color:#cbd5e1;font-size:12px}
+main{max-width:860px;margin:auto;padding:12px 12px calc(100px + env(safe-area-inset-bottom))}
+.card{background:var(--card);border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 1px 5px rgba(0,0,0,.07)}
+h2{font-size:17px;margin:0 0 12px} h3{font-size:14px;margin:0 0 8px}
+label{display:block;font-size:11px;color:var(--muted);margin:0 0 4px}
+input,select,textarea{width:100%;padding:11px;border:1px solid #d1d5db;border-radius:10px;background:#fff;font-size:16px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:#64748b;box-shadow:0 0 0 2px #64748b22}
+textarea{min-height:72px;resize:vertical}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.item{border:1px solid var(--line);border-radius:12px;padding:11px;margin:9px 0;background:#fff}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+button{border:0;border-radius:10px;padding:10px 13px;font-size:14px;font-weight:700;cursor:pointer}
+.primary{background:var(--primary);color:#fff}.secondary{background:#e5e7eb;color:#111827}.danger{background:#fee2e2;color:#991b1b}.blue{background:#dbeafe;color:#1d4ed8}.green{background:#d1fae5;color:#065f46}
+.smallbtn{padding:7px 9px;font-size:12px}
+.muted{color:var(--muted);font-size:12px}.right{display:flex;justify-content:flex-end}.between{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.summary{display:grid;grid-template-columns:1fr 1fr;gap:8px}.metric{background:var(--soft);border-radius:12px;padding:11px}.metric small{display:block;color:var(--muted);font-size:11px}.metric strong{display:block;font-size:18px;margin-top:2px}
+.profit{font-size:28px;font-weight:900;margin-top:3px}
+.badge{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800;background:#e5e7eb}
+.badge.next{background:#dbeafe;color:#1d4ed8}.badge.done{background:#d1fae5;color:#065f46}
+.performer-row{display:grid;grid-template-columns:1.2fr .7fr .7fr .8fr .8fr auto;gap:7px;align-items:end}
+.staff-row{display:grid;grid-template-columns:1.1fr 1fr .8fr .8fr auto;gap:7px;align-items:end}
+.exp-row{display:grid;grid-template-columns:1.3fr .8fr auto;gap:7px;align-items:end}
+.reserve-row{display:grid;grid-template-columns:1.1fr .6fr 1fr auto;gap:7px;align-items:end}
+.time-row{display:grid;grid-template-columns:.7fr 1.2fr 1fr auto;gap:7px;align-items:end}
+.result-box{background:#f8fafc;border-radius:9px;padding:10px;font-weight:800}
+.timetable{position:relative}
+.timeline-item{position:relative;padding:13px 12px 13px 18px;border:1px solid var(--line);border-radius:12px;margin:9px 0;background:#fff}
+.timeline-item:before{content:"";position:absolute;left:7px;top:17px;width:7px;height:7px;border-radius:50%;background:#64748b}
+.timeline-item.next{border:2px solid var(--accent);background:#eff6ff}
+.timeline-item.next:before{background:var(--accent);width:9px;height:9px;left:6px}
+.time-big{font-size:20px;font-weight:900}
+.checkline{display:flex;align-items:center;gap:7px;margin-top:8px;font-size:14px}
+.checkline input{width:20px;height:20px}
+.sticky-bottom{position:fixed;bottom:0;left:0;right:0;background:rgba(255,255,255,.96);backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:9px 12px calc(9px + env(safe-area-inset-bottom));z-index:30}
+.bottom-inner{max-width:860px;margin:auto;display:flex;gap:8px}
+.bottom-inner button{flex:1}
+.hidden{display:none!important}
+details summary{font-weight:800;cursor:pointer;padding:3px 0}
+hr{border:0;border-top:1px solid var(--line);margin:12px 0}
+@media(max-width:650px){
+ .grid3{grid-template-columns:1fr 1fr}
+ .performer-row,.staff-row,.exp-row,.reserve-row,.time-row{grid-template-columns:1fr 1fr}
+ .performer-row>div:first-child,.staff-row>div:first-child,.exp-row>div:first-child,.reserve-row>div:first-child,.time-row>div:first-child{grid-column:1/-1}
+ .performer-row>button,.staff-row>button,.exp-row>button,.reserve-row>button,.time-row>button{grid-column:1/-1}
+}
+@media(min-width:651px){.mobile-summary{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎪 ライブ主催ツール</h1>
+  <p>売上・ノルマ・バック・スタッフ・経費・予約・タイムテーブルをまとめて管理</p>
+</header>
+
+<main>
+<section class="card">
+  <h2>🏠 イベント基本情報</h2>
+  <div class="grid">
+    <div><label>ライブ名</label><input id="eventName" placeholder="例：○○主催ライブ"></div>
+    <div><label>開催日</label><input id="eventDate" type="date"></div>
+    <div><label>会場</label><input id="venue" placeholder="会場名"></div>
+    <div><label>メモ</label><input id="eventMemo" placeholder="開場時間など"></div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="between"><h2>🎫 チケット売上</h2><span class="badge">全体集計</span></div>
+  <div class="grid3">
+    <div><label>チケット料金</label><input id="ticketPrice" type="number" min="0" value="3000"></div>
+    <div><label>販売枚数</label><input id="totalSold" type="number" min="0" value="0"></div>
+    <div><label>ドリンク・その他売上</label><input id="otherRevenue" type="number" min="0" value="0"></div>
+  </div>
+  <p class="muted">チケット売上＝チケット料金 × 販売枚数。ドリンク等の売上は利益に加算します。</p>
+</section>
+
+<section class="card">
+  <div class="between">
+    <h2>👤 出演者・ノルマ・バック</h2>
+    <button class="blue smallbtn" onclick="addPerformer()">＋ 出演者追加</button>
+  </div>
+  <p class="muted">出演者ごとに「売上枚数・ノルマ・バック」を管理。バック方式は「超過分×固定額」または「売上％」。</p>
+  <div id="performers"></div>
+  <div class="summary">
+    <div class="metric"><small>出演者売上枚数</small><strong id="performerSoldTotal">0枚</strong></div>
+    <div class="metric"><small>出演者バック合計</small><strong id="performerBackTotal">¥0</strong></div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="between">
+    <h2>👥 スタッフ費</h2>
+    <button class="blue smallbtn" onclick="addStaff()">＋ スタッフ追加</button>
+  </div>
+  <p class="muted">スタッフごとに日当と交通費を分けて登録します。</p>
+  <div id="staff"></div>
+</section>
+
+<section class="card">
+  <div class="between">
+    <h2>💸 その他経費</h2>
+    <button class="blue smallbtn" onclick="addExpense()">＋ 経費追加</button>
+  </div>
+  <div id="expenses"></div>
+</section>
+
+<section class="card">
+  <div class="between">
+    <h2>📋 予約・取り置き・受付</h2>
+    <button class="blue smallbtn" onclick="addReservation()">＋ 予約追加</button>
+  </div>
+  <div class="summary">
+    <div class="metric"><small>予約人数</small><strong id="reservePeople">0人</strong></div>
+    <div class="metric"><small>予約枚数</small><strong id="reserveTickets">0枚</strong></div>
+    <div class="metric"><small>受付済み</small><strong id="checkedTickets">0枚</strong></div>
+    <div class="metric"><small>未受付</small><strong id="uncheckedTickets">0枚</strong></div>
+  </div>
+  <div id="reservations"></div>
+</section>
+
+<section class="card">
+  <div class="between">
+    <h2>⏱️ オムニバス・タイムテーブル</h2>
+    <button class="blue smallbtn" onclick="addTimetable()">＋ 出番追加</button>
+  </div>
+  <p class="muted">同じ出演者が何度登場してもOK。時間順に自動並び替えし、開催日当日は「NEXT」を表示します。</p>
+  <div id="timetableEdit"></div>
+  <hr>
+  <div class="between"><h3>📣 当日のタイムライン</h3><button class="secondary smallbtn" onclick="renderTimeline()">↻ 更新</button></div>
+  <div id="timeline" class="timetable"></div>
+</section>
+
+<section class="card">
+  <h2>📊 収支・精算</h2>
+  <div class="summary">
+    <div class="metric"><small>チケット売上</small><strong id="sumTicketSales">¥0</strong></div>
+    <div class="metric"><small>その他売上</small><strong id="sumOtherRevenue">¥0</strong></div>
+    <div class="metric"><small>出演者バック</small><strong id="sumBacks">¥0</strong></div>
+    <div class="metric"><small>スタッフ費</small><strong id="sumStaff">¥0</strong></div>
+    <div class="metric"><small>その他経費</small><strong id="sumExpenses">¥0</strong></div>
+    <div class="metric"><small>総売上</small><strong id="sumRevenue">¥0</strong></div>
+  </div>
+  <hr>
+  <div class="muted">イベント利益</div>
+  <div class="profit" id="profit">¥0</div>
+  <div class="actions">
+    <button class="primary" onclick="recalculate()">📊 再計算</button>
+    <button class="green" onclick="saveNow()">💾 保存</button>
+    <button class="secondary" onclick="shareSummary()">📤 共有</button>
+    <button class="secondary" onclick="window.print()">🖨 印刷 / PDF</button>
+    <button class="secondary" onclick="exportBackup()">⬇️ バックアップ</button>
+    <button class="secondary" onclick="document.getElementById('importFile').click()">⬆️ 復元</button>
+    <input id="importFile" type="file" accept=".json,application/json" class="hidden" onchange="importBackup(event)">
+  </div>
+</section>
+
+<section class="card">
+  <details>
+    <summary>⚙️ データについて</summary>
+    <p class="muted">入力内容はこのiPhoneのブラウザ内に保存します。GitHub Pagesに公開する場合、アプリのソースコード自体は公開になります。個人情報などをGitHubのファイルに直接書き込む仕組みではありません。</p>
+  </details>
+</section>
+</main>
+
+<div class="sticky-bottom">
+  <div class="bottom-inner">
+    <button class="primary" onclick="recalculate()">📊 収支更新</button>
+    <button class="secondary" onclick="saveNow()">💾 保存</button>
+    <button class="secondary" onclick="window.scrollTo({top:0,behavior:'smooth'})">⬆️ 上へ</button>
+  </div>
+</div>
+
+<script>
+const KEY='liveOrganizerFullV1';
+let state={event:{name:'',date:'',venue:'',memo:'',ticketPrice:3000,totalSold:0,otherRevenue:0},performers:[],staff:[],expenses:[],reservations:[],timetable:[]};
+
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
+function yen(n){return '¥'+Math.round(Number(n)||0).toLocaleString('ja-JP')}
+function num(v){return Number(v)||0}
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function dateToday(){return new Date().toISOString().slice(0,10)}
+
+function addPerformer(d={}){state.performers.push({id:uid(),name:'',quota:10,sold:0,mode:'fixed',back:1000,...d});renderAll()}
+function addStaff(d={}){state.staff.push({id:uid(),name:'',role:'',day:0,travel:0,...d});renderAll()}
+function addExpense(d={}){state.expenses.push({id:uid(),name:'',amount:0,...d});renderAll()}
+function addReservation(d={}){state.reservations.push({id:uid(),name:'',count:1,from:'',checked:false,...d});renderAll()}
+function addTimetable(d={}){state.timetable.push({id:uid(),time:'18:00',who:'',note:'',...d});renderAll()}
+
+function removeItem(type,id){
+  state[type]=state[type].filter(x=>x.id!==id); renderAll();
+}
+function update(type,id,key,value){
+  const x=state[type].find(x=>x.id===id); if(x){x[key]=value; autoSave(); recalculate(false)}
+}
+function bindEventInputs(){
+  const map={eventName:['name'],eventDate:['date'],venue:['venue'],eventMemo:['memo'],ticketPrice:['ticketPrice','number'],totalSold:['totalSold','number'],otherRevenue:['otherRevenue','number']};
+  Object.entries(map).forEach(([id,arr])=>{
+    const el=document.getElementById(id); if(!el)return;
+    el.value=state.event[arr[0]]??'';
+    el.oninput=()=>{state.event[arr[0]]=arr[1]==='number'?num(el.value):el.value; autoSave(); recalculate(false); if(id==='eventDate')renderTimeline()}
+  });
+}
+function renderPerformers(){
+  const box=document.getElementById('performers');
+  if(!state.performers.length){box.innerHTML='<p class="muted">まだ出演者がありません。「出演者追加」から登録してください。</p>';return}
+  box.innerHTML=state.performers.map((p,i)=>{
+    const back=p.mode==='percent'?p.sold*num(state.event.ticketPrice)*p.back/100:Math.max(0,num(p.sold)-num(p.quota))*num(p.back);
+    return `<div class="item">
+      <div class="between"><h3>${i+1}. ${esc(p.name||'出演者未入力')}</h3><button class="danger smallbtn" onclick="removeItem('performers','${p.id}')">削除</button></div>
+      <div class="performer-row">
+        <div><label>出演者名</label><input value="${esc(p.name)}" oninput="update('performers','${p.id}','name',this.value)"></div>
+        <div><label>ノルマ</label><input type="number" min="0" value="${p.quota}" oninput="update('performers','${p.id}','quota',num(this.value))"></div>
+        <div><label>売上枚数</label><input type="number" min="0" value="${p.sold}" oninput="update('performers','${p.id}','sold',num(this.value))"></div>
+        <div><label>バック方式</label><select onchange="update('performers','${p.id}','mode',this.value)"><option value="fixed" ${p.mode==='fixed'?'selected':''}>超過×固定額</option><option value="percent" ${p.mode==='percent'?'selected':''}>売上％</option></select></div>
+        <div><label>${p.mode==='percent'?'バック率(%)':'超過1枚あたり'}</label><input type="number" min="0" value="${p.back}" oninput="update('performers','${p.id}','back',num(this.value))"></div>
+        <div><label>バック予定</label><div class="result-box">${yen(back)}</div></div>
+      </div>
+      <div class="muted" style="margin-top:8px">ノルマ差：${num(p.sold)-num(p.quota)}枚 / 精算予定：${yen(back)}</div>
+    </div>`
+  }).join('');
+}
+function renderStaff(){
+  const box=document.getElementById('staff');
+  if(!state.staff.length){box.innerHTML='<p class="muted">まだスタッフがありません。「スタッフ追加」から登録してください。</p>';return}
+  box.innerHTML=state.staff.map((s,i)=>`<div class="item">
+    <div class="between"><h3>${i+1}. ${esc(s.name||'スタッフ未入力')}</h3><button class="danger smallbtn" onclick="removeItem('staff','${s.id}')">削除</button></div>
+    <div class="staff-row">
+      <div><label>名前</label><input value="${esc(s.name)}" oninput="update('staff','${s.id}','name',this.value)"></div>
+      <div><label>担当</label><input placeholder="受付 / PA / 照明など" value="${esc(s.role)}" oninput="update('staff','${s.id}','role',this.value)"></div>
+      <div><label>日当</label><input type="number" min="0" value="${s.day}" oninput="update('staff','${s.id}','day',num(this.value))"></div>
+      <div><label>交通費</label><input type="number" min="0" value="${s.travel}" oninput="update('staff','${s.id}','travel',num(this.value))"></div>
+      <div><label>合計</label><div class="result-box">${yen(num(s.day)+num(s.travel))}</div></div>
+    </div>
+  </div>`).join('');
+}
+function renderExpenses(){
+  const box=document.getElementById('expenses');
+  if(!state.expenses.length){box.innerHTML='<p class="muted">まだ経費がありません。「経費追加」から登録してください。</p>';return}
+  box.innerHTML=state.expenses.map((e,i)=>`<div class="item"><div class="exp-row">
+    <div><label>項目</label><input placeholder="会場費・備品・印刷など" value="${esc(e.name)}" oninput="update('expenses','${e.id}','name',this.value)"></div>
+    <div><label>金額</label><input type="number" min="0" value="${e.amount}" oninput="update('expenses','${e.id}','amount',num(this.value))"></div>
+    <button class="danger smallbtn" onclick="removeItem('expenses','${e.id}')">削除</button>
+  </div></div>`).join('');
+}
+function renderReservations(){
+  const box=document.getElementById('reservations');
+  if(!state.reservations.length){box.innerHTML='<p class="muted">まだ予約がありません。</p>';return}
+  box.innerHTML=state.reservations.map((r,i)=>`<div class="item"><div class="reserve-row">
+    <div><label>名前</label><input value="${esc(r.name)}" oninput="update('reservations','${r.id}','name',this.value)"></div>
+    <div><label>枚数</label><input type="number" min="1" value="${r.count}" oninput="update('reservations','${r.id}','count',Math.max(0,num(this.value)))"></div>
+    <div><label>取り置き元・出演者</label><input value="${esc(r.from)}" oninput="update('reservations','${r.id}','from',this.value)"></div>
+    <button class="danger smallbtn" onclick="removeItem('reservations','${r.id}')">削除</button>
+  </div>
+  <label class="checkline"><input type="checkbox" ${r.checked?'checked':''} onchange="update('reservations','${r.id}','checked',this.checked)"> 受付済み</label></div>`).join('');
+}
+function renderTimetableEdit(){
+  const box=document.getElementById('timetableEdit');
+  if(!state.timetable.length){box.innerHTML='<p class="muted">まだ出番がありません。</p>';return}
+  const arr=[...state.timetable].sort((a,b)=>String(a.time).localeCompare(String(b.time)));
+  box.innerHTML=arr.map((t,i)=>`<div class="item"><div class="time-row">
+    <div><label>時間</label><input type="time" value="${esc(t.time)}" onchange="update('timetable','${t.id}','time',this.value)"></div>
+    <div><label>出演者・内容</label><input value="${esc(t.who)}" oninput="update('timetable','${t.id}','who',this.value)"></div>
+    <div><label>メモ</label><input value="${esc(t.note)}" oninput="update('timetable','${t.id}','note',this.value)"></div>
+    <button class="danger smallbtn" onclick="removeItem('timetable','${t.id}')">削除</button>
+  </div></div>`).join('');
+}
+function renderTimeline(){
+  const box=document.getElementById('timeline');
+  const arr=[...state.timetable].filter(x=>x.time).sort((a,b)=>String(a.time).localeCompare(String(b.time)));
+  if(!arr.length){box.innerHTML='<p class="muted">タイムテーブルを追加するとここに表示されます。</p>';return}
+  const today=dateToday(), isEventToday=state.event.date===today;
+  const now=new Date();
+  const current=now.getHours()*60+now.getMinutes();
+  let nextFound=false;
+  box.innerHTML=arr.map(t=>{
+    const [h,m]=String(t.time).split(':').map(Number), mins=h*60+m;
+    let next=false,done=false;
+    if(isEventToday){if(!nextFound && mins>=current){next=true;nextFound=true}else if(mins<current)done=true}
+    return `<div class="timeline-item ${next?'next':''}">
+      <div class="between"><div class="time-big">${esc(t.time)}</div>${next?'<span class="badge next">NEXT</span>':done?'<span class="badge done">終了</span>':''}</div>
+      <div style="font-size:17px;font-weight:800;margin-top:4px">${esc(t.who||'内容未入力')}</div>
+      ${t.note?`<div class="muted" style="margin-top:5px">📝 ${esc(t.note)}</div>`:''}
+    </div>`
+  }).join('');
+}
+function recalculate(scroll=true){
+  const price=num(state.event.ticketPrice), sold=num(state.event.totalSold);
+  let backs=0, pSold=0;
+  state.performers.forEach(p=>{
+    const b=p.mode==='percent'?num(p.sold)*price*num(p.back)/100:Math.max(0,num(p.sold)-num(p.quota))*num(p.back);
+    backs+=b;pSold+=num(p.sold);
+  });
+  const staff=state.staff.reduce((a,s)=>a+num(s.day)+num(s.travel),0);
+  const expenses=state.expenses.reduce((a,e)=>a+num(e.amount),0);
+  const ticketSales=price*sold, otherRevenue=num(state.event.otherRevenue), revenue=ticketSales+otherRevenue;
+  const profit=revenue-backs-staff-expenses;
+  document.getElementById('performerSoldTotal').textContent=pSold.toLocaleString('ja-JP')+'枚';
+  document.getElementById('performerBackTotal').textContent=yen(backs);
+  document.getElementById('sumTicketSales').textContent=yen(ticketSales);
+  document.getElementById('sumOtherRevenue').textContent=yen(otherRevenue);
+  document.getElementById('sumBacks').textContent=yen(backs);
+  document.getElementById('sumStaff').textContent=yen(staff);
+  document.getElementById('sumExpenses').textContent=yen(expenses);
+  document.getElementById('sumRevenue').textContent=yen(revenue);
+  document.getElementById('profit').textContent=yen(profit);
+  updateReservationSummary();
+  if(scroll)document.querySelector('#profit').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function updateReservationSummary(){
+  const people=state.reservations.length;
+  const tickets=state.reservations.reduce((a,r)=>a+num(r.count),0);
+  const checked=state.reservations.filter(r=>r.checked).reduce((a,r)=>a+num(r.count),0);
+  document.getElementById('reservePeople').textContent=people.toLocaleString('ja-JP')+'人';
+  document.getElementById('reserveTickets').textContent=tickets.toLocaleString('ja-JP')+'枚';
+  document.getElementById('checkedTickets').textContent=checked.toLocaleString('ja-JP')+'枚';
+  document.getElementById('uncheckedTickets').textContent=Math.max(0,tickets-checked).toLocaleString('ja-JP')+'枚';
+}
+function renderAll(){
+  bindEventInputs();renderPerformers();renderStaff();renderExpenses();renderReservations();renderTimetableEdit();renderTimeline();recalculate(false);autoSave();
+}
+function collectState(){return JSON.parse(JSON.stringify(state))}
+function autoSave(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}}
+function saveNow(){autoSave();alert('保存しました！このiPhoneのブラウザに保存されています。')}
+function load(){
+  try{
+    const raw=localStorage.getItem(KEY);
+    if(raw){const d=JSON.parse(raw);state={...state,...d,event:{...state.event,...(d.event||{})}};
+  }catch(e){}
+  if(!state.performers.length)state.performers=[{id:uid(),name:'',quota:10,sold:0,mode:'fixed',back:1000}];
+  renderAll();
+}
+function shareSummary(){
+  const price=num(state.event.ticketPrice),sold=num(state.event.totalSold);
+  const backs=state.performers.reduce((a,p)=>a+(p.mode==='percent'?num(p.sold)*price*num(p.back)/100:Math.max(0,num(p.sold)-num(p.quota))*num(p.back)),0);
+  const staff=state.staff.reduce((a,s)=>a+num(s.day)+num(s.travel),0);
+  const exp=state.expenses.reduce((a,e)=>a+num(e.amount),0);
+  const revenue=price*sold+num(state.event.otherRevenue),profit=revenue-backs-staff-exp;
+  const text=`${state.event.name||'ライブ'}\n${state.event.date||''}\n\n総売上 ${yen(revenue)}\n出演者バック ${yen(backs)}\nスタッフ費 ${yen(staff)}\nその他経費 ${yen(exp)}\n利益 ${yen(profit)}`;
+  if(navigator.share)navigator.share({title:state.event.name||'ライブ主催ツール',text}).catch(()=>{});
+  else navigator.clipboard?.writeText(text).then(()=>alert('共有内容をコピーしました。'));
+}
+function exportBackup(){
+  const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.event.name||'live-organizer')+'.json';a.click();URL.revokeObjectURL(a.href);
+}
+function importBackup(ev){
+  const f=ev.target.files?.[0];if(!f)return;
+  const r=new FileReader();r.onload=()=>{try{state=JSON.parse(r.result);renderAll();saveNow()}catch(e){alert('バックアップを読み込めませんでした。')}};r.readAsText(f);
+}
+load();
+if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{});}
+setInterval(()=>renderTimeline(),60000);
+</script>
+</body>
+</html>
