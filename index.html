@@ -27,6 +27,7 @@ textarea{min-height:72px;resize:vertical}
 button{border:0;border-radius:10px;padding:10px 13px;font-size:14px;font-weight:700;cursor:pointer}
 .primary{background:var(--primary);color:#fff}.secondary{background:#e5e7eb;color:#111827}.danger{background:#fee2e2;color:#991b1b}.blue{background:#dbeafe;color:#1d4ed8}.green{background:#d1fae5;color:#065f46}
 .smallbtn{padding:7px 9px;font-size:12px}
+.project-list{display:grid;gap:7px;margin-top:10px}.project-chip{border:1px solid var(--line);border-radius:12px;padding:9px;background:var(--soft);font-size:13px}.project-chip strong{display:block}.project-chip span{color:var(--muted);font-size:11px}
 .muted{color:var(--muted);font-size:12px}.right{display:flex;justify-content:flex-end}.between{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .summary{display:grid;grid-template-columns:1fr 1fr;gap:8px}.metric{background:var(--soft);border-radius:12px;padding:11px}.metric small{display:block;color:var(--muted);font-size:11px}.metric strong{display:block;font-size:18px;margin-top:2px}
 .profit{font-size:28px;font-weight:900;margin-top:3px}
@@ -64,10 +65,19 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
 <body>
 <header>
   <h1>🎪 ライブ主催ツール</h1>
-  <p>売上・ノルマ・バック・スタッフ・経費・予約・タイムテーブルをまとめて管理</p>
+  <p>複数のライブを切り替えながら、売上・ノルマ・バック・スタッフ・経費・予約・タイムテーブルをまとめて管理</p>
 </header>
 
 <main>
+<section class="card project-manager">
+  <div class="between"><div><h2>🗂️ ライブ一覧</h2><p class="muted">複数のライブを作って、いつでも切り替えできます。</p></div><button class="primary smallbtn" onclick="createProject()">＋ 新しいライブ</button></div>
+  <div class="grid">
+    <div><label>現在のライブ</label><select id="projectSelect" onchange="switchProject(this.value)"></select></div>
+    <div class="actions" style="margin-top:22px"><button class="blue smallbtn" onclick="duplicateCurrentProject()">📋 このライブをコピー</button><button class="danger smallbtn" onclick="deleteCurrentProject()">🗑️ 削除</button></div>
+  </div>
+  <div id="projectList" class="project-list"></div>
+</section>
+
 <section class="card">
   <h2>🏠 イベント基本情報</h2>
   <div class="grid">
@@ -185,8 +195,24 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
 </div>
 
 <script>
-const KEY='liveOrganizerFullV1';
+const KEY='liveOrganizerMultiV2';
+const OLD_KEY='liveOrganizerFullV1';
 let state={event:{name:'',date:'',venue:'',memo:'',ticketPrice:3000,totalSold:0,otherRevenue:0},performers:[],staff:[],expenses:[],reservations:[],timetable:[]};
+let db={projects:[],currentId:null};
+function blankState(){return {event:{name:'',date:'',venue:'',memo:'',ticketPrice:3000,totalSold:0,otherRevenue:0},performers:[{id:uid(),name:'',quota:10,sold:0,mode:'fixed',back:1000}],staff:[],expenses:[],reservations:[],timetable:[]}}
+function currentProject(){return db.projects.find(p=>p.id===db.currentId)}
+function ensureCurrentProject(){let p=currentProject();if(!p){p={id:uid(),name:state.event.name||'新しいライブ',state:state};db.projects=[p];db.currentId=p.id}state=p.state}
+function renderProjectManager(){
+  const sel=document.getElementById('projectSelect'), list=document.getElementById('projectList'); if(!sel||!list)return;
+  sel.innerHTML=db.projects.map(p=>`<option value="${p.id}" ${p.id===db.currentId?'selected':''}>${esc(p.name||'名前未設定')} ${p.state.event.date?'・ '+esc(p.state.event.date):''}</option>`).join('');
+  list.innerHTML=db.projects.map((p,i)=>`<div class="project-chip"><strong>${i+1}. ${esc(p.name||'名前未設定')}</strong><span>${esc(p.state.event.date||'日付未設定')} ${esc(p.state.event.venue||'')}</span></div>`).join('');
+}
+function saveCurrentProject(){const p=currentProject();if(p){p.state=state;p.name=state.event.name||'名前未設定'}}
+function createProject(){saveCurrentProject();const name=prompt('新しいライブの名前を入力してください','新規ライブ');if(name===null)return;const ns=blankState();ns.event.name=name.trim()||'新規ライブ';const p={id:uid(),name:ns.event.name,state:ns};db.projects.push(p);db.currentId=p.id;state=p.state;renderAll()}
+function switchProject(id){saveCurrentProject();const p=db.projects.find(x=>x.id===id);if(!p)return;db.currentId=id;state=p.state;renderAll()}
+function duplicateCurrentProject(){saveCurrentProject();const src=currentProject();if(!src)return;const ns=JSON.parse(JSON.stringify(src.state));ns.event.name=(src.name||'ライブ')+' コピー';const p={id:uid(),name:ns.event.name,state:ns};db.projects.push(p);db.currentId=p.id;state=p.state;renderAll()}
+function deleteCurrentProject(){if(db.projects.length<=1){alert('ライブは最低1つ残してください。');return}const p=currentProject();if(!p)return;if(!confirm(`「${p.name||'このライブ'}」を削除しますか？\nこのライブのデータはこのiPhoneから削除されます。`))return;db.projects=db.projects.filter(x=>x.id!==p.id);db.currentId=db.projects[0].id;state=db.projects[0].state;renderAll()}
+
 
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
 function yen(n){return '¥'+Math.round(Number(n)||0).toLocaleString('ja-JP')}
@@ -330,17 +356,25 @@ function updateReservationSummary(){
   document.getElementById('uncheckedTickets').textContent=Math.max(0,tickets-checked).toLocaleString('ja-JP')+'枚';
 }
 function renderAll(){
+  ensureCurrentProject();
+  renderProjectManager();
   bindEventInputs();renderPerformers();renderStaff();renderExpenses();renderReservations();renderTimetableEdit();renderTimeline();recalculate(false);autoSave();
 }
 function collectState(){return JSON.parse(JSON.stringify(state))}
-function autoSave(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}}
+function autoSave(){try{saveCurrentProject();localStorage.setItem(KEY,JSON.stringify(db));renderProjectManager()}catch(e){}}
 function saveNow(){autoSave();alert('保存しました！このiPhoneのブラウザに保存されています。')}
 function load(){
   try{
     const raw=localStorage.getItem(KEY);
-    if(raw){const d=JSON.parse(raw);state={...state,...d,event:{...state.event,...(d.event||{})}}}
-  }catch(e){}
-  if(!state.performers.length)state.performers=[{id:uid(),name:'',quota:10,sold:0,mode:'fixed',back:1000}];
+    if(raw){const d=JSON.parse(raw);if(d&&Array.isArray(d.projects)){db=d;state=(currentProject()?.state)||blankState();}}
+    if(!db.projects.length){
+      const old=localStorage.getItem(OLD_KEY);
+      if(old){const d=JSON.parse(old);state={...state,...d,event:{...state.event,...(d.event||{})}}}
+      if(!state.performers.length)state.performers=blankState().performers;
+      const p={id:uid(),name:state.event.name||'新しいライブ',state};db.projects=[p];db.currentId=p.id;
+    }
+  }catch(e){db={projects:[],currentId:null};state=blankState();const p={id:uid(),name:'新しいライブ',state};db.projects=[p];db.currentId=p.id}
+  state=currentProject().state;
   renderAll();
 }
 function shareSummary(){
@@ -354,12 +388,12 @@ function shareSummary(){
   else navigator.clipboard?.writeText(text).then(()=>alert('共有内容をコピーしました。'));
 }
 function exportBackup(){
-  const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
+  saveCurrentProject(); const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(state.event.name||'live-organizer')+'.json';a.click();URL.revokeObjectURL(a.href);
 }
 function importBackup(ev){
   const f=ev.target.files?.[0];if(!f)return;
-  const r=new FileReader();r.onload=()=>{try{state=JSON.parse(r.result);renderAll();saveNow()}catch(e){alert('バックアップを読み込めませんでした。')}};r.readAsText(f);
+  const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(d&&Array.isArray(d.projects)){db=d;state=currentProject().state}else{state=d;db={projects:[{id:uid(),name:d.event?.name||'復元ライブ',state:d}],currentId:null};db.currentId=db.projects[0].id}renderAll();saveNow()}catch(e){alert('バックアップを読み込めませんでした。')}};r.readAsText(f);
 }
 load();
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{});}
