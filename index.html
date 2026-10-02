@@ -338,7 +338,7 @@ function saveNow(){autoSave();alert('保存しました！このiPhoneのブラ�
 function load(){
   try{
     const raw=localStorage.getItem(KEY);
-    if(raw){const d=JSON.parse(raw);state={...state,...d,event:{...state.event,...(d.event||{})}};
+    if(raw){const d=JSON.parse(raw);state={...state,...d,event:{...state.event,...(d.event||{})}}}
   }catch(e){}
   if(!state.performers.length)state.performers=[{id:uid(),name:'',quota:10,sold:0,mode:'fixed',back:1000}];
   renderAll();
