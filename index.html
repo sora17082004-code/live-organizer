@@ -85,6 +85,7 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
     <div><label>開催日</label><input id="eventDate" type="date"></div>
     <div><label>会場</label><input id="venue" placeholder="会場名"></div>
     <div><label>メモ</label><input id="eventMemo" placeholder="開場時間など"></div>
+    <div><label>ライブ構成</label><select id="eventParts"><option value="1">1部制</option><option value="2">2部制</option></select></div>
   </div>
 </section>
 
@@ -147,7 +148,7 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
     <h2>⏱️ オムニバス・タイムテーブル</h2>
     <button class="blue smallbtn" onclick="addTimetable()">＋ 出番追加</button>
   </div>
-  <p class="muted">同じ出演者が何度登場してもOK。時間順に自動並び替えし、開催日当日は「NEXT」を表示します。</p>
+  <p class="muted">同じ出演者が何度登場してもOK。1部制／2部制に合わせて分けて管理できます。時間順に自動並び替えし、開催日当日は「NEXT」を表示します。</p>
   <div id="timetableEdit"></div>
   <hr>
   <div class="between"><h3>📣 当日のタイムライン</h3><button class="secondary smallbtn" onclick="renderTimeline()">↻ 更新</button></div>
@@ -197,9 +198,9 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
 <script>
 const KEY='liveOrganizerMultiV2';
 const OLD_KEY='liveOrganizerFullV1';
-let state={event:{name:'',date:'',venue:'',memo:'',ticketPrice:3000,totalSold:0,otherRevenue:0},performers:[],staff:[],expenses:[],reservations:[],timetable:[]};
+let state={event:{name:'',date:'',venue:'',memo:'',parts:1,ticketPrice:3000,totalSold:0,otherRevenue:0},performers:[],staff:[],expenses:[],reservations:[],timetable:[]};
 let db={projects:[],currentId:null};
-function blankState(){return {event:{name:'',date:'',venue:'',memo:'',ticketPrice:3000,totalSold:0,otherRevenue:0},performers:[{id:uid(),name:'',quota:10,sold:0,mode:'fixed',back:1000}],staff:[],expenses:[],reservations:[],timetable:[]}}
+function blankState(){return {event:{name:'',date:'',venue:'',memo:'',parts:1,ticketPrice:3000,totalSold:0,otherRevenue:0},performers:[{id:uid(),name:'',quota:10,sold:0,mode:'fixed',back:1000}],staff:[],expenses:[],reservations:[],timetable:[]}}
 function currentProject(){return db.projects.find(p=>p.id===db.currentId)}
 function ensureCurrentProject(){let p=currentProject();if(!p){p={id:uid(),name:state.event.name||'新しいライブ',state:state};db.projects=[p];db.currentId=p.id}state=p.state}
 function renderProjectManager(){
@@ -224,7 +225,7 @@ function addPerformer(d={}){state.performers.push({id:uid(),name:'',quota:10,sol
 function addStaff(d={}){state.staff.push({id:uid(),name:'',role:'',day:0,travel:0,...d});renderAll()}
 function addExpense(d={}){state.expenses.push({id:uid(),name:'',amount:0,...d});renderAll()}
 function addReservation(d={}){state.reservations.push({id:uid(),name:'',count:1,from:'',checked:false,...d});renderAll()}
-function addTimetable(d={}){state.timetable.push({id:uid(),time:'18:00',who:'',note:'',...d});renderAll()}
+function addTimetable(d={}){state.timetable.push({id:uid(),time:'18:00',who:'',note:'',part:1,...d});renderAll()}
 
 function removeItem(type,id){
   state[type]=state[type].filter(x=>x.id!==id); renderAll();
@@ -239,6 +240,16 @@ function bindEventInputs(){
     el.value=state.event[arr[0]]??'';
     el.oninput=()=>{state.event[arr[0]]=arr[1]==='number'?num(el.value):el.value; autoSave(); recalculate(false); if(id==='eventDate')renderTimeline()}
   });
+  const partsEl=document.getElementById('eventParts');
+  if(partsEl){
+    state.event.parts=Number(state.event.parts)||1;
+    partsEl.value=String(state.event.parts);
+    partsEl.onchange=()=>{
+      state.event.parts=Number(partsEl.value)||1;
+      state.timetable.forEach(t=>{t.part=Number(t.part)||1; if(state.event.parts===1)t.part=1});
+      autoSave(); renderAll();
+    };
+  }
 }
 function renderPerformers(){
   const box=document.getElementById('performers');
@@ -296,8 +307,10 @@ function renderReservations(){
 function renderTimetableEdit(){
   const box=document.getElementById('timetableEdit');
   if(!state.timetable.length){box.innerHTML='<p class="muted">まだ出番がありません。</p>';return}
-  const arr=[...state.timetable].sort((a,b)=>String(a.time).localeCompare(String(b.time)));
+  const parts=Number(state.event.parts)||1;
+  const arr=[...state.timetable].map(t=>({...t,part:Number(t.part)||1})).sort((a,b)=>(a.part-b.part)||String(a.time).localeCompare(String(b.time)));
   box.innerHTML=arr.map((t,i)=>`<div class="item"><div class="time-row">
+    ${parts===2?`<div><label>部</label><select onchange="update('timetable','${t.id}','part',num(this.value));renderAll()"><option value="1" ${t.part===1?'selected':''}>第1部</option><option value="2" ${t.part===2?'selected':''}>第2部</option></select></div>`:''}
     <div><label>時間</label><input type="time" value="${esc(t.time)}" onchange="update('timetable','${t.id}','time',this.value)"></div>
     <div><label>出演者・内容</label><input value="${esc(t.who)}" oninput="update('timetable','${t.id}','who',this.value)"></div>
     <div><label>メモ</label><input value="${esc(t.note)}" oninput="update('timetable','${t.id}','note',this.value)"></div>
@@ -306,21 +319,28 @@ function renderTimetableEdit(){
 }
 function renderTimeline(){
   const box=document.getElementById('timeline');
-  const arr=[...state.timetable].filter(x=>x.time).sort((a,b)=>String(a.time).localeCompare(String(b.time)));
+  const parts=Number(state.event.parts)||1;
+  const arr=[...state.timetable].filter(x=>x.time).map(t=>({...t,part:Number(t.part)||1})).sort((a,b)=>(a.part-b.part)||String(a.time).localeCompare(String(b.time)));
   if(!arr.length){box.innerHTML='<p class="muted">タイムテーブルを追加するとここに表示されます。</p>';return}
   const today=dateToday(), isEventToday=state.event.date===today;
   const now=new Date();
   const current=now.getHours()*60+now.getMinutes();
-  let nextFound=false;
-  box.innerHTML=arr.map(t=>{
-    const [h,m]=String(t.time).split(':').map(Number), mins=h*60+m;
-    let next=false,done=false;
-    if(isEventToday){if(!nextFound && mins>=current){next=true;nextFound=true}else if(mins<current)done=true}
-    return `<div class="timeline-item ${next?'next':''}">
-      <div class="between"><div class="time-big">${esc(t.time)}</div>${next?'<span class="badge next">NEXT</span>':done?'<span class="badge done">終了</span>':''}</div>
-      <div style="font-size:17px;font-weight:800;margin-top:4px">${esc(t.who||'内容未入力')}</div>
-      ${t.note?`<div class="muted" style="margin-top:5px">📝 ${esc(t.note)}</div>`:''}
-    </div>`
+  const groups=parts===2?[1,2]:[1];
+  box.innerHTML=groups.map(part=>{
+    const group=arr.filter(t=>Number(t.part)===part);
+    if(!group.length)return `<div class="item"><h3>第${part}部</h3><p class="muted">まだ出番がありません。</p></div>`;
+    let nextFound=false;
+    const cards=group.map(t=>{
+      const [h,m]=String(t.time).split(':').map(Number), mins=h*60+m;
+      let next=false,done=false;
+      if(isEventToday){if(!nextFound && mins>=current){next=true;nextFound=true}else if(mins<current)done=true}
+      return `<div class="timeline-item ${next?'next':''}">
+        <div class="between"><div class="time-big">${esc(t.time)}</div>${next?'<span class="badge next">NEXT</span>':done?'<span class="badge done">終了</span>':''}</div>
+        <div style="font-size:17px;font-weight:800;margin-top:4px">${esc(t.who||'内容未入力')}</div>
+        ${t.note?`<div class="muted" style="margin-top:5px">📝 ${esc(t.note)}</div>`:''}
+      </div>`;
+    }).join('');
+    return `<div class="item" style="margin-bottom:14px"><h3>第${part}部</h3>${cards}</div>`;
   }).join('');
 }
 function recalculate(scroll=true){
@@ -375,6 +395,10 @@ function load(){
     }
   }catch(e){db={projects:[],currentId:null};state=blankState();const p={id:uid(),name:'新しいライブ',state};db.projects=[p];db.currentId=p.id}
   state=currentProject().state;
+  state.event=state.event||{};
+  state.event.parts=Number(state.event.parts)||1;
+  state.timetable=(state.timetable||[]).map(t=>({...t,part:Number(t.part)||1}));
+  if(state.event.parts===1)state.timetable.forEach(t=>t.part=1);
   renderAll();
 }
 function shareSummary(){
