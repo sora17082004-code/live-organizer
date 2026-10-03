@@ -334,7 +334,7 @@ function renderReservations(){
   box.innerHTML=state.reservations.map((r,i)=>`<div class="item"><div class="reserve-row">
     <div><label>名前</label><input value="${esc(r.name)}" oninput="update('reservations','${r.id}','name',this.value)"></div>
     <div><label>枚数</label><input type="number" min="1" value="${r.count}" oninput="update('reservations','${r.id}','count',Math.max(0,num(this.value)))"></div>
-    <div><label>取り置き元・出演者</label><input value="${esc(r.from)}" oninput="update('reservations','${r.id}','from',this.value)"></div>
+    <div><label>取り置き元・出演者</label><select onchange="update('reservations','${r.id}','from',this.value);renderReservations()">${state.performers.map(p=>`<option value="${esc(p.name)}" ${r.from===p.name?'selected':''}>${esc(p.name||'出演者未入力')}</option>`).join('')}<option value="その他・未指定" ${r.from==='その他・未指定'?'selected':''}>その他・未指定</option></select></div>
     <button class="danger smallbtn" onclick="removeItem('reservations','${r.id}')">削除</button>
   </div>
   <label class="checkline"><input type="checkbox" ${r.checked?'checked':''} onchange="update('reservations','${r.id}','checked',this.checked)"> 受付済み</label></div>`).join('');
