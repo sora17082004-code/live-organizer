@@ -77,13 +77,39 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
  .performer-row>button,.staff-row>button,.exp-row>button,.reserve-row>button,.time-row>button{grid-column:1/-1}
 }
 @media(min-width:651px){.mobile-summary{display:none}}
+
+.auth-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.cloud-status{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.cloud-dot{width:9px;height:9px;border-radius:50%;background:#9ca3af}.cloud-dot.ok{background:#059669}.cloud-dot.warn{background:#d97706}.role-note{font-weight:800}
+@media(max-width:650px){.auth-grid{grid-template-columns:1fr}}
 </style>
+
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
 <header>
   <h1>🎪 ライブ主催ツール</h1>
   <p>複数のライブを切り替えながら、売上・ノルマ・バック・スタッフ・経費・予約・タイムテーブルをまとめて管理</p>
 </header>
+
+<section class="card" id="cloudCard" style="max-width:860px;margin:12px auto 0">
+  <div class="between"><div><h2>☁️ 共同作業・クラウド</h2><p class="muted">Firebaseでログインすると、ライブを複数端末で共有できます。</p></div><div class="cloud-status"><span id="cloudDot" class="cloud-dot"></span><span id="cloudStatus" class="muted">準備中…</span></div></div>
+  <div id="cloudAuthArea">
+    <div class="auth-grid">
+      <div><label>メールアドレス</label><input id="authEmail" type="email" autocomplete="email" placeholder="example@email.com"></div>
+      <div><label>パスワード</label><input id="authPassword" type="password" autocomplete="current-password" placeholder="6文字以上"></div>
+    </div>
+    <div class="actions"><button class="primary" type="button" onclick="cloudLogin()">ログイン</button><button class="blue" type="button" onclick="cloudSignup()">新規登録</button></div>
+    <p class="muted">初回は「新規登録」、次回から「ログイン」。</p>
+  </div>
+  <div id="cloudUserArea" class="hidden">
+    <div class="result-box"><span id="cloudUserEmail"></span>　<span id="cloudRole" class="role-note"></span></div>
+    <div class="actions"><button class="primary" type="button" onclick="cloudPushCurrent()">☁️ このライブをクラウド保存</button><button class="blue" type="button" onclick="createInvite()">🔗 招待リンクを作る</button><button class="secondary" type="button" onclick="cloudSignOut()">ログアウト</button></div>
+    <p id="cloudHint" class="muted"></p>
+  </div>
+  <div id="inviteArea" class="hidden"></div>
+  <div id="cloudLivesArea" class="hidden"><hr><h3>☁️ 共有中のライブ</h3><div id="cloudLivesList" class="project-list"></div></div>
+</section>
 
 <main>
 <section class="card project-manager">
@@ -228,6 +254,9 @@ const KEY='liveOrganizerMultiV2';
 const OLD_KEY='liveOrganizerFullV1';
 let state={event:{name:'',date:'',venue:'',memo:'',parts:1,ticketPrice:3000,totalSold:0,dayOther:0,drinkPrice:600,otherRevenue:0},performers:[],staff:[],expenses:[],reservations:[],timetable:[]};
 let db={projects:[],currentId:null};
+let cloud={user:null,ready:false,liveUnsub:null,livesUnsub:null,liveId:null,role:null,suppress:false,saveTimer:null};
+const FIREBASE_CONFIG={apiKey:"AIzaSyALG7PdhbRgNL2fkR8ZMuB6PaABxND4FK4",authDomain:"live-organizer-b9b1f.firebaseapp.com",projectId:"live-organizer-b9b1f",storageBucket:"live-organizer-b9b1f.firebasestorage.app",messagingSenderId:"691791540130",appId:"1:691791540130:web:48e1acc346d4e64b220cfb"};
+let fdb=null;
 function blankState(){return {event:{name:'',date:'',venue:'',memo:'',parts:1,ticketPrice:3000,totalSold:0,dayOther:0,drinkPrice:600,otherRevenue:0},performers:[{id:uid(),name:'',type:'normal',fee:0,quota:10,sold:0,daySold:0,mode:'fixed',back:1000}],staff:[],expenses:[],reservations:[],timetable:[]}}
 function currentProject(){return db.projects.find(p=>p.id===db.currentId)}
 function ensureCurrentProject(){let p=currentProject();if(!p){p={id:uid(),name:state.event.name||'新しいライブ',state:state};db.projects=[p];db.currentId=p.id}state=p.state}
@@ -236,11 +265,11 @@ function renderProjectManager(){
   sel.innerHTML=db.projects.map(p=>`<option value="${p.id}" ${p.id===db.currentId?'selected':''}>${esc(p.name||'名前未設定')} ${p.state.event.date?'・ '+esc(p.state.event.date):''}</option>`).join('');
   list.innerHTML=db.projects.map((p,i)=>`<div class="project-chip"><strong>${i+1}. ${esc(p.name||'名前未設定')}</strong><span>${esc(p.state.event.date||'日付未設定')} ${esc(p.state.event.venue||'')}</span></div>`).join('');
 }
-function saveCurrentProject(){const p=currentProject();if(p){p.state=state;p.name=state.event.name||'名前未設定'}}
-function createProject(){saveCurrentProject();const name=prompt('新しいライブの名前を入力してください','新規ライブ');if(name===null)return;const ns=blankState();ns.event.name=name.trim()||'新規ライブ';const p={id:uid(),name:ns.event.name,state:ns};db.projects.push(p);db.currentId=p.id;state=p.state;renderAll()}
-function switchProject(id){saveCurrentProject();const p=db.projects.find(x=>x.id===id);if(!p)return;db.currentId=id;state=p.state;renderAll()}
-function duplicateCurrentProject(){saveCurrentProject();const src=currentProject();if(!src)return;const ns=JSON.parse(JSON.stringify(src.state));ns.event.name=(src.name||'ライブ')+' コピー';const p={id:uid(),name:ns.event.name,state:ns};db.projects.push(p);db.currentId=p.id;state=p.state;renderAll()}
-function deleteCurrentProject(){if(db.projects.length<=1){alert('ライブは最低1つ残してください。');return}const p=currentProject();if(!p)return;if(!confirm(`「${p.name||'このライブ'}」を削除しますか？\nこのライブのデータはこのiPhoneから削除されます。`))return;db.projects=db.projects.filter(x=>x.id!==p.id);db.currentId=db.projects[0].id;state=db.projects[0].state;renderAll()}
+function saveCurrentProject(){const p=currentProject();if(p){p.state=state;p.name=state.event.name||'名前未設定';if(cloud.user&&p.cloudId===cloud.liveId&&cloud.role!=='viewer') queueCloudSave()}}
+function createProject(){if(cloud.user&&cloud.liveId&&!isOwner()){alert('共有ライブの作成はオーナー権限で行ってください。');return}saveCurrentProject();const name=prompt('新しいライブの名前を入力してください','新規ライブ');if(name===null)return;const ns=blankState();ns.event.name=name.trim()||'新規ライブ';const p={id:uid(),name:ns.event.name,state:ns};db.projects.push(p);db.currentId=p.id;state=p.state;renderAll()}
+function switchProject(id){saveCurrentProject();const p=db.projects.find(x=>x.id===id);if(!p)return;db.currentId=id;state=p.state;if(p.cloudId&&cloud.user){openCloudLive(p.cloudId)}else{if(cloud.liveId)stopLiveWatch();renderAll()}}
+function duplicateCurrentProject(){if(cloud.user&&cloud.liveId&&!isOwner()){alert('共有ライブのコピーはオーナー権限で行ってください。');return}saveCurrentProject();const src=currentProject();if(!src)return;const ns=JSON.parse(JSON.stringify(src.state));ns.event.name=(src.name||'ライブ')+' コピー';const p={id:uid(),name:ns.event.name,state:ns};db.projects.push(p);db.currentId=p.id;state=p.state;renderAll()}
+function deleteCurrentProject(){if(cloud.user&&cloud.liveId&&!isOwner()){alert('共有ライブの削除はオーナー権限で行ってください。');return}if(db.projects.length<=1){alert('ライブは最低1つ残してください。');return}const p=currentProject();if(!p)return;if(!confirm(`「${p.name||'このライブ'}」を削除しますか？\nこのライブのデータはこのiPhoneから削除されます。`))return;db.projects=db.projects.filter(x=>x.id!==p.id);db.currentId=db.projects[0].id;state=db.projects[0].state;renderAll()}
 
 
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7)}
@@ -249,30 +278,30 @@ function num(v){return Number(v)||0}
 function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function dateToday(){return new Date().toISOString().slice(0,10)}
 
-function addPerformer(d={}){state.performers.push({id:uid(),name:'',type:'normal',fee:0,quota:10,sold:0,daySold:0,mode:'fixed',back:1000,...d});renderAll()}
-function addStaff(d={}){state.staff.push({id:uid(),name:'',role:'',day:0,travel:0,...d});renderAll()}
-function addExpense(d={}){state.expenses.push({id:uid(),name:'',amount:0,...d});renderAll()}
-function addReservation(d={}){state.reservations.push({id:uid(),name:'',count:1,from:'',checked:false,...d});renderAll()}
-function addTimetable(d={}){state.timetable.push({id:uid(),time:'18:00',who:'',cdNo:'',cue:'',note:'',part:1,...d});renderAll()}
+function addPerformer(d={}){if(!canEdit())return;state.performers.push({id:uid(),name:'',type:'normal',fee:0,quota:10,sold:0,daySold:0,mode:'fixed',back:1000,...d});renderAll() }
+function addStaff(d={}){if(!canEdit())return;state.staff.push({id:uid(),name:'',role:'',day:0,travel:0,...d});renderAll() }
+function addExpense(d={}){if(!canEdit())return;state.expenses.push({id:uid(),name:'',amount:0,...d});renderAll() }
+function addReservation(d={}){if(!canEdit())return;state.reservations.push({id:uid(),name:'',count:1,from:'',checked:false,...d});renderAll() }
+function addTimetable(d={}){if(!canEdit())return;state.timetable.push({id:uid(),time:'18:00',who:'',cdNo:'',cue:'',note:'',part:1,...d});renderAll() }
 
-function removeItem(type,id){
-  state[type]=state[type].filter(x=>x.id!==id); renderAll();
-}
+function removeItem(type,id){if(!canEdit())return;state[type]=state[type].filter(x=>x.id!==id); renderAll();}
 function update(type,id,key,value){
-  const x=state[type].find(x=>x.id===id); if(x){x[key]=value; autoSave(); recalculate(false)}
+  if(!canEdit())return;
+  const x=state[type].find(x=>x.id===id); if(x){const oldName=x.name;x[key]=value;if(type==='performers'&&key==='name'&&oldName&&oldName!==value){state.reservations.forEach(r=>{if(r.from===oldName)r.from=value})} autoSave(); recalculate(false);if(type==='performers'&&key==='name')renderReservations()}
 }
 function bindEventInputs(){
   const map={eventName:['name'],eventDate:['date'],venue:['venue'],eventMemo:['memo'],ticketPrice:['ticketPrice','number'],dayOther:['dayOther','number'],drinkPrice:['drinkPrice','number'],otherRevenue:['otherRevenue','number']};
   Object.entries(map).forEach(([id,arr])=>{
     const el=document.getElementById(id); if(!el)return;
     el.value=state.event[arr[0]]??'';
-    el.oninput=()=>{state.event[arr[0]]=arr[1]==='number'?num(el.value):el.value; autoSave(); recalculate(false); if(id==='eventDate')renderTimeline()}
+    el.oninput=()=>{if(!canEdit()){bindEventInputs();return;}state.event[arr[0]]=arr[1]==='number'?num(el.value):el.value; autoSave(); recalculate(false); if(id==='eventDate')renderTimeline()}
   });
   const partsEl=document.getElementById('eventParts');
   if(partsEl){
     state.event.parts=Number(state.event.parts)||1;
     partsEl.value=String(state.event.parts);
     partsEl.onchange=()=>{
+      if(!canEdit()){bindEventInputs();return;}
       state.event.parts=Number(partsEl.value)||1;
       state.timetable.forEach(t=>{t.part=Number(t.part)||1; if(state.event.parts===1)t.part=1});
       autoSave(); renderAll();
@@ -515,7 +544,32 @@ function renderAll(){
 }
 function collectState(){return JSON.parse(JSON.stringify(state))}
 function autoSave(){try{saveCurrentProject();localStorage.setItem(KEY,JSON.stringify(db));renderProjectManager()}catch(e){}}
-function saveNow(){autoSave();alert('保存しました！このiPhoneのブラウザに保存されています。')}
+function saveNow(){if(cloud.user&&cloud.liveId&&cloud.role!=='viewer'){cloudPushCurrent(false);return}autoSave();alert('保存しました！このiPhoneのブラウザに保存されています。')}
+function cloudStatus(text,kind=''){const e=document.getElementById('cloudStatus'),d=document.getElementById('cloudDot');if(e)e.textContent=text;if(d)d.className='cloud-dot'+(kind?' '+kind:'')}
+function canEdit(){if(cloud.user&&cloud.liveId&&cloud.role==='viewer'){alert('閲覧者は編集できません。');return false}return true}
+function isOwner(){return !!(cloud.user&&cloud.liveId&&cloud.role==='owner')}
+function escAttr(s){return esc(s).replace(/`/g,'&#96;')}
+function projectForCloud(id){return db.projects.find(p=>p.cloudId===id)}
+function cloudRoleFromDoc(data,uid){return data?.roles?.[uid]||null}
+function stopLiveWatch(){if(cloud.liveUnsub){cloud.liveUnsub();cloud.liveUnsub=null}cloud.liveId=null;cloud.role=null}
+function stopLivesWatch(){if(cloud.livesUnsub){cloud.livesUnsub();cloud.livesUnsub=null}}
+function queueCloudSave(){if(!cloud.user||!cloud.liveId||cloud.role==='viewer'||cloud.suppress||!fdb)return;clearTimeout(cloud.saveTimer);cloud.saveTimer=setTimeout(()=>cloudPushCurrent(true),650)}
+async function cloudPushCurrent(silent=false){if(!cloud.user||!cloud.liveId){if(!silent)alert('先にログインして、ライブをクラウド保存してください。');return}if(cloud.role==='viewer'){if(!silent)alert('閲覧者は保存できません。');return}const p=currentProject();if(!p)return;try{const payload={name:state.event.name||p.name||'名前未設定',data:collectState(),updatedAt:firebase.firestore.FieldValue.serverTimestamp()};await fdb.collection('lives').doc(cloud.liveId).update(payload);p.cloudId=cloud.liveId;p.state=state;p.name=state.event.name||'名前未設定';try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}if(!silent)alert('☁️ クラウドに保存しました！')}catch(e){console.error(e);if(!silent)alert('クラウド保存に失敗しました。Firebaseのルールを確認してください。')}}
+function subscribeLive(liveId,role){stopLiveWatch();cloud.liveId=liveId;cloud.role=role;const p=projectForCloud(liveId);if(p){db.currentId=p.id;state=p.state}else{const np={id:uid(),cloudId:liveId,name:'共有ライブ',state:blankState()};db.projects.push(np);db.currentId=np.id;state=np.state}renderAll();cloud.liveUnsub=fdb.collection('lives').doc(liveId).onSnapshot(snap=>{if(!snap.exists)return;const d=snap.data();const r=cloudRoleFromDoc(d,cloud.user.uid);if(!r){stopLiveWatch();return}cloud.role=r;const cp=projectForCloud(liveId);if(cp){cloud.suppress=true;cp.name=d.name||'共有ライブ';cp.state=d.data||blankState();state=cp.state;db.currentId=cp.id;renderAll();try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}cloud.suppress=false}renderCloudUI();},e=>{console.error(e);cloudStatus('同期エラー','warn')});cloudStatus(role==='owner'?'クラウド接続中・オーナー':role==='editor'?'クラウド接続中・編集者':'クラウド接続中・閲覧者','ok');}
+function renderCloudUI(){const auth=document.getElementById('cloudAuthArea'),user=document.getElementById('cloudUserArea'),lives=document.getElementById('cloudLivesArea');if(!auth||!user)return;if(cloud.user){auth.classList.add('hidden');user.classList.remove('hidden');document.getElementById('cloudUserEmail').textContent=cloud.user.email||cloud.user.uid;document.getElementById('cloudRole').textContent=cloud.role?`権限：${cloud.role==='owner'?'オーナー':cloud.role==='editor'?'編集者':'閲覧者'}`:'未選択';document.getElementById('cloudHint').textContent=cloud.role==='viewer'?'閲覧・印刷・共有ができます。編集はオーナーまたは編集者のみ可能です。':cloud.role==='editor'?'このライブの内容を編集できます。':'ライブを作成・共有できます。';lives.classList.remove('hidden')}else{auth.classList.remove('hidden');user.classList.add('hidden');lives.classList.add('hidden')}}
+function renderCloudLives(docs){const box=document.getElementById('cloudLivesList');if(!box)return;if(!docs.length){box.innerHTML='<p class="muted">まだ共有ライブがありません。「このライブをクラウド保存」から始められます。</p>';return}box.innerHTML=docs.map(d=>{const data=d.data()||{},r=cloudRoleFromDoc(data,cloud.user.uid);return `<div class="project-chip"><strong>${esc(data.name||'名前未設定')}</strong><span>${esc(data.data?.event?.date||'日付未設定')} ${esc(data.data?.event?.venue||'')} ・ ${r==='owner'?'オーナー':r==='editor'?'編集者':'閲覧者'}</span><div class="actions"><button class="blue smallbtn" type="button" onclick="openCloudLive('${escAttr(d.id)}')">開く</button></div></div>`}).join('')}
+function openCloudLive(id){if(!cloud.user||!fdb)return;const p=projectForCloud(id);if(p){db.currentId=p.id;state=p.state;renderAll()}fdb.collection('lives').doc(id).get().then(s=>{if(!s.exists){alert('ライブが見つかりません。');return}const r=cloudRoleFromDoc(s.data(),cloud.user.uid);if(!r){alert('このライブへの権限がありません。');return}subscribeLive(id,r)}).catch(e=>alert('ライブを開けませんでした。'))}
+async function createCloudLive(){if(!cloud.user)return null;const id=uid()+uid();const now=firebase.firestore.FieldValue.serverTimestamp();const ref=fdb.collection('lives').doc(id);const data={ownerUid:cloud.user.uid,memberUids:[cloud.user.uid],roles:{[cloud.user.uid]:'owner'},name:state.event.name||'新しいライブ',data:collectState(),createdAt:now,updatedAt:now};await ref.set(data);await ref.collection('members').doc(cloud.user.uid).set({role:'owner',uid:cloud.user.uid});return id}
+async function createInvite(){if(!isOwner()){alert('招待リンクを作れるのはオーナーだけです。');return}const role=prompt('招待する権限を入力してください\nowner / editor / viewer\n\n通常は editor または viewer','editor');if(!role||!['editor','viewer'].includes(role))return;const token=uid()+uid()+uid();const expires=Date.now()+7*24*60*60*1000;try{await fdb.collection('invites').doc(token).set({liveId:cloud.liveId,role,createdBy:cloud.user.uid,expiresAt:expires,claimedBy:null,createdAt:firebase.firestore.FieldValue.serverTimestamp()});const url=location.origin+location.pathname+'#invite='+encodeURIComponent(token);const text=`Live Organizer「${state.event.name||'ライブ'}」への招待\n権限：${role==='editor'?'編集者':'閲覧者'}\n${url}`;document.getElementById('inviteArea').classList.remove('hidden');document.getElementById('inviteArea').innerHTML=`<div class="item"><h3>🔗 招待リンク（7日間有効）</h3><textarea readonly>${esc(text)}</textarea><div class="actions"><button class="primary smallbtn" type="button" onclick="shareInviteText()">📤 共有</button></div></div>`;window._inviteText=text;if(navigator.share){try{await navigator.share({title:'Live Organizer 招待',text})}catch(e){}}else alert('招待リンクを作りました。共有ボタンからLINEなどへ送れます。')}catch(e){alert('招待リンクの作成に失敗しました。')}}
+function shareInviteText(){const t=window._inviteText||'';if(navigator.share)navigator.share({title:'Live Organizer 招待',text:t}).catch(()=>{});else if(navigator.clipboard)navigator.clipboard.writeText(t).then(()=>alert('招待文をコピーしました。'))}
+async function acceptInvite(token){if(!cloud.user||!fdb)return;try{const ref=fdb.collection('invites').doc(token),snap=await ref.get();if(!snap.exists){alert('招待リンクが見つかりません。');return}const inv=snap.data();if(inv.expiresAt<Date.now()||inv.claimedBy){alert('この招待リンクは期限切れ、または使用済みです。');return}const liveRef=fdb.collection('lives').doc(inv.liveId),memberRef=liveRef.collection('members').doc(cloud.user.uid);await fdb.runTransaction(async tx=>{const liveSnap=await tx.get(liveRef);const invSnap=await tx.get(ref);if(!liveSnap.exists)throw new Error('LIVE_NOT_FOUND');const cur=invSnap.data();if(!cur||cur.claimedBy||cur.expiresAt<Date.now())throw new Error('INVITE_USED');tx.set(memberRef,{role:cur.role,uid:cloud.user.uid,inviteId:token,createdAt:firebase.firestore.FieldValue.serverTimestamp()});tx.update(ref,{claimedBy:cloud.user.uid,claimedAt:firebase.firestore.FieldValue.serverTimestamp()});const live=liveSnap.data();tx.update(liveRef,{memberUids:firebase.firestore.FieldValue.arrayUnion(cloud.user.uid),roles:{...(live.roles||{}),[cloud.user.uid]:cur.role},updatedAt:firebase.firestore.FieldValue.serverTimestamp()})});location.hash='';alert('招待を受け入れました！');openCloudLive(inv.liveId)}catch(e){console.error(e);alert('招待を受け入れられませんでした。リンクの期限や権限を確認してください。')}}
+async function cloudLogin(){const email=document.getElementById('authEmail').value.trim(),pw=document.getElementById('authPassword').value;if(!email||!pw){alert('メールアドレスとパスワードを入力してください。');return}try{await firebase.auth().signInWithEmailAndPassword(email,pw)}catch(e){alert('ログインできませんでした。メールアドレスとパスワードを確認してください。')}}
+async function cloudSignup(){const email=document.getElementById('authEmail').value.trim(),pw=document.getElementById('authPassword').value;if(!email||pw.length<6){alert('メールアドレスと6文字以上のパスワードを入力してください。');return}try{await firebase.auth().createUserWithEmailAndPassword(email,pw)}catch(e){alert('新規登録できませんでした。すでに登録済みなら「ログイン」を使ってください。')}}
+function cloudSignOut(){firebase.auth().signOut()}
+async function cloudPushInitial(){if(!cloud.user)return;const p=currentProject();if(p?.cloudId){openCloudLive(p.cloudId);return}try{const id=await createCloudLive();p.cloudId=id;db.currentId=p.id;cloud.liveId=id;cloud.role='owner';p.state=state;p.name=state.event.name||p.name||'名前未設定';try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}subscribeLive(id,'owner');renderCloudLivesFromOnce();alert('☁️ このライブをクラウドに保存しました！')}catch(e){console.error(e);alert('クラウド保存に失敗しました。')}}
+function renderCloudLivesFromOnce(){if(!cloud.user||!fdb)return;fdb.collection('lives').where('memberUids','array-contains',cloud.user.uid).get().then(s=>renderCloudLives(s.docs)).catch(e=>console.error(e))}
+function startLivesWatch(){stopLivesWatch();cloud.livesUnsub=fdb.collection('lives').where('memberUids','array-contains',cloud.user.uid).onSnapshot(s=>renderCloudLives(s.docs),e=>{console.error(e);cloudStatus('ライブ一覧の同期エラー','warn')})}
+function initFirebase(){try{firebase.initializeApp(FIREBASE_CONFIG);fdb=firebase.firestore();cloud.ready=true;cloudStatus('Firebase準備完了','ok');firebase.auth().onAuthStateChanged(async user=>{cloud.user=user;stopLiveWatch();if(user){cloudStatus('ログイン中');startLivesWatch();renderCloudUI();const token=new URLSearchParams(location.hash.replace(/^#/,'' )).get('invite');if(token){await acceptInvite(token)}else{renderCloudLivesFromOnce()}}else{stopLivesWatch();renderCloudUI();cloudStatus('ログインしていません','warn')} });renderCloudUI()}catch(e){console.error(e);cloudStatus('Firebase初期化エラー','warn')}}
 function load(){
   try{
     const raw=localStorage.getItem(KEY);
@@ -559,6 +613,7 @@ function importBackup(ev){
   const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(d&&Array.isArray(d.projects)){db=d;state=currentProject().state}else{state=d;db={projects:[{id:uid(),name:d.event?.name||'復元ライブ',state:d}],currentId:null};db.currentId=db.projects[0].id}renderAll();saveNow()}catch(e){alert('バックアップを読み込めませんでした。')}};r.readAsText(f);
 }
 load();
+initFirebase();
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{});}
 setInterval(()=>renderTimeline(),60000);
 </script>
