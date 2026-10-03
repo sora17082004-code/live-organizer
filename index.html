@@ -125,7 +125,7 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
   <div id="performers"></div>
   <div class="summary">
     <div class="metric"><small>出演者売上枚数</small><strong id="performerSoldTotal">0枚</strong></div>
-    <div class="metric"><small>出演者バック合計</small><strong id="performerBackTotal">¥0</strong></div>
+    <div class="metric"><small>出演者バック合計</small><strong id="performerBackTotal">¥0</strong></div><div class="metric"><small>ノルマ未達・回収額合計</small><strong id="performerCollectionTotal">¥0</strong></div>
   </div>
 </section>
 
@@ -278,6 +278,8 @@ function renderPerformers(){
   if(!state.performers.length){box.innerHTML='<p class="muted">まだ出演者がありません。「出演者追加」から登録してください。</p>';return}
   box.innerHTML=state.performers.map((p,i)=>{
     const back=p.mode==='percent'?p.sold*num(state.event.ticketPrice)*p.back/100:Math.max(0,num(p.sold)-num(p.quota))*num(p.back);
+    const shortage=Math.max(0,num(p.quota)-num(p.sold));
+    const collection=shortage*num(state.event.ticketPrice);
     return `<div class="item">
       <div class="between"><h3>${i+1}. ${esc(p.name||'出演者未入力')}</h3><button class="danger smallbtn" onclick="removeItem('performers','${p.id}')">削除</button></div>
       <div class="performer-row">
@@ -287,8 +289,9 @@ function renderPerformers(){
         <div><label>バック方式</label><select onchange="update('performers','${p.id}','mode',this.value)"><option value="fixed" ${p.mode==='fixed'?'selected':''}>超過×固定額</option><option value="percent" ${p.mode==='percent'?'selected':''}>売上％</option></select></div>
         <div><label>${p.mode==='percent'?'バック率(%)':'超過1枚あたり'}</label><input type="number" min="0" value="${p.back}" oninput="update('performers','${p.id}','back',num(this.value))"></div>
         <div><label>バック予定</label><div class="result-box">${yen(back)}</div></div>
+        <div><label>ノルマ未達・回収額</label><div class="result-box">${yen(collection)}</div></div>
       </div>
-      <div class="muted" style="margin-top:8px">ノルマ差：${num(p.sold)-num(p.quota)}枚 / 精算予定：${yen(back)}</div>
+      <div class="muted" style="margin-top:8px">ノルマ差：${num(p.sold)-num(p.quota)}枚 / 未達：${shortage}枚 / バック予定：${yen(back)} / 回収額：${yen(collection)}</div>
     </div>`
   }).join('');
 }
@@ -452,9 +455,11 @@ function renderTimeline(){
 }
 function recalculate(scroll=true){
   const price=num(state.event.ticketPrice), sold=num(state.event.totalSold);
-  let backs=0, pSold=0;
+  let backs=0, pSold=0, collections=0;
   state.performers.forEach(p=>{
     const b=p.mode==='percent'?num(p.sold)*price*num(p.back)/100:Math.max(0,num(p.sold)-num(p.quota))*num(p.back);
+    const shortage=Math.max(0,num(p.quota)-num(p.sold));
+    collections+=shortage*price;
     backs+=b;pSold+=num(p.sold);
   });
   const staff=state.staff.reduce((a,s)=>a+num(s.day)+num(s.travel),0);
@@ -463,6 +468,7 @@ function recalculate(scroll=true){
   const profit=revenue-backs-staff-expenses;
   document.getElementById('performerSoldTotal').textContent=pSold.toLocaleString('ja-JP')+'枚';
   document.getElementById('performerBackTotal').textContent=yen(backs);
+  document.getElementById('performerCollectionTotal').textContent=yen(collections);
   document.getElementById('sumTicketSales').textContent=yen(ticketSales);
   document.getElementById('sumOtherRevenue').textContent=yen(otherRevenue);
   document.getElementById('sumBacks').textContent=yen(backs);
