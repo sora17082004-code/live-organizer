@@ -33,7 +33,7 @@ button{border:0;border-radius:10px;padding:10px 13px;font-size:14px;font-weight:
 .profit{font-size:28px;font-weight:900;margin-top:3px}
 .badge{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:800;background:#e5e7eb}
 .badge.next{background:#dbeafe;color:#1d4ed8}.badge.done{background:#d1fae5;color:#065f46}
-.performer-row{display:grid;grid-template-columns:1.2fr .7fr .7fr .8fr .8fr auto;gap:7px;align-items:end}
+.performer-row{display:grid;grid-template-columns:1.2fr .7fr .7fr .8fr .8fr .8fr .8fr auto;gap:7px;align-items:end}
 .staff-row{display:grid;grid-template-columns:1.1fr 1fr .8fr .8fr auto;gap:7px;align-items:end}
 .exp-row{display:grid;grid-template-columns:1.3fr .8fr auto;gap:7px;align-items:end}
 .reserve-row{display:grid;grid-template-columns:1.1fr .6fr 1fr auto;gap:7px;align-items:end}
@@ -122,11 +122,11 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
     <h2>👤 出演者・ノルマ・バック</h2>
     <button class="blue smallbtn" onclick="addPerformer()">＋ 出演者追加</button>
   </div>
-  <p class="muted">出演者ごとに「売上枚数・ノルマ・バック」を管理。バック方式は「超過分×固定額」または「売上％」。</p>
+  <p class="muted">出演者ごとに「売上枚数・ノルマ・バック・出演料」を管理。ゲスト出演は出演料を0円にしたまま、他の出演者と同じノルマ・バック計算ができます。</p>
   <div id="performers"></div>
   <div class="summary">
     <div class="metric"><small>出演者売上枚数</small><strong id="performerSoldTotal">0枚</strong></div>
-    <div class="metric"><small>出演者バック合計</small><strong id="performerBackTotal">¥0</strong></div><div class="metric"><small>ノルマ未達・回収額合計</small><strong id="performerCollectionTotal">¥0</strong></div>
+    <div class="metric"><small>出演者バック合計</small><strong id="performerBackTotal">¥0</strong></div><div class="metric"><small>出演料合計</small><strong id="performerFeeTotal">¥0</strong></div><div class="metric"><small>ノルマ未達・回収額合計</small><strong id="performerCollectionTotal">¥0</strong></div>
   </div>
 </section>
 
@@ -187,6 +187,7 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
     <div class="metric"><small>ドリンク売上</small><strong id="sumDrinkSales">¥0</strong></div>
     <div class="metric"><small>その他売上</small><strong id="sumOtherRevenue">¥0</strong></div>
     <div class="metric"><small>出演者バック</small><strong id="sumBacks">¥0</strong></div>
+    <div class="metric"><small>出演料</small><strong id="sumPerformerFees">¥0</strong></div>
     <div class="metric"><small>スタッフ費</small><strong id="sumStaff">¥0</strong></div>
     <div class="metric"><small>その他経費</small><strong id="sumExpenses">¥0</strong></div>
     <div class="metric"><small>総売上</small><strong id="sumRevenue">¥0</strong></div>
@@ -227,7 +228,7 @@ const KEY='liveOrganizerMultiV2';
 const OLD_KEY='liveOrganizerFullV1';
 let state={event:{name:'',date:'',venue:'',memo:'',parts:1,ticketPrice:3000,totalSold:0,dayOther:0,drinkPrice:600,otherRevenue:0},performers:[],staff:[],expenses:[],reservations:[],timetable:[]};
 let db={projects:[],currentId:null};
-function blankState(){return {event:{name:'',date:'',venue:'',memo:'',parts:1,ticketPrice:3000,totalSold:0,dayOther:0,drinkPrice:600,otherRevenue:0},performers:[{id:uid(),name:'',quota:10,sold:0,daySold:0,mode:'fixed',back:1000}],staff:[],expenses:[],reservations:[],timetable:[]}}
+function blankState(){return {event:{name:'',date:'',venue:'',memo:'',parts:1,ticketPrice:3000,totalSold:0,dayOther:0,drinkPrice:600,otherRevenue:0},performers:[{id:uid(),name:'',type:'normal',fee:0,quota:10,sold:0,daySold:0,mode:'fixed',back:1000}],staff:[],expenses:[],reservations:[],timetable:[]}}
 function currentProject(){return db.projects.find(p=>p.id===db.currentId)}
 function ensureCurrentProject(){let p=currentProject();if(!p){p={id:uid(),name:state.event.name||'新しいライブ',state:state};db.projects=[p];db.currentId=p.id}state=p.state}
 function renderProjectManager(){
@@ -248,7 +249,7 @@ function num(v){return Number(v)||0}
 function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function dateToday(){return new Date().toISOString().slice(0,10)}
 
-function addPerformer(d={}){state.performers.push({id:uid(),name:'',quota:10,sold:0,mode:'fixed',back:1000,...d});renderAll()}
+function addPerformer(d={}){state.performers.push({id:uid(),name:'',type:'normal',fee:0,quota:10,sold:0,daySold:0,mode:'fixed',back:1000,...d});renderAll()}
 function addStaff(d={}){state.staff.push({id:uid(),name:'',role:'',day:0,travel:0,...d});renderAll()}
 function addExpense(d={}){state.expenses.push({id:uid(),name:'',amount:0,...d});renderAll()}
 function addReservation(d={}){state.reservations.push({id:uid(),name:'',count:1,from:'',checked:false,...d});renderAll()}
@@ -290,6 +291,8 @@ function renderPerformers(){
       <div class="between"><h3>${i+1}. ${esc(p.name||'出演者未入力')}</h3><button class="danger smallbtn" onclick="removeItem('performers','${p.id}')">削除</button></div>
       <div class="performer-row">
         <div><label>出演者名</label><input value="${esc(p.name)}" oninput="update('performers','${p.id}','name',this.value)"></div>
+        <div><label>出演区分</label><select onchange="update('performers','${p.id}','type',this.value)"><option value="normal" ${p.type!=='guest'?'selected':''}>通常</option><option value="guest" ${p.type==='guest'?'selected':''}>ゲスト</option></select></div>
+        <div><label>出演料</label><input type="number" min="0" value="${num(p.fee)}" oninput="update('performers','${p.id}','fee',num(this.value))"></div>
         <div><label>ノルマ</label><input type="number" min="0" value="${p.quota}" oninput="update('performers','${p.id}','quota',num(this.value))"></div>
         <div><label>取り置き・売上枚数</label><input type="number" min="0" value="${p.sold}" oninput="update('performers','${p.id}','sold',num(this.value))"></div>
         <div><label>当日券・${esc(p.name||'この出演者')}目当て</label><input type="number" min="0" value="${num(p.daySold)}" oninput="update('performers','${p.id}','daySold',num(this.value))"></div>
@@ -462,12 +465,13 @@ function renderTimeline(){
 }
 function recalculate(scroll=true){
   const price=num(state.event.ticketPrice), dayOther=num(state.event.dayOther);
-  let backs=0, pSold=0, targetDay=0, collections=0, quotaTotal=0;
+  let backs=0, performerFees=0, pSold=0, targetDay=0, collections=0, quotaTotal=0;
   state.performers.forEach(p=>{
     const quotaSales=num(p.sold)+num(p.daySold);
     const b=p.mode==='percent'?quotaSales*price*num(p.back)/100:Math.max(0,quotaSales-num(p.quota))*num(p.back);
     const shortage=Math.max(0,num(p.quota)-quotaSales);
     collections+=shortage*price;
+    performerFees+=num(p.fee);
     backs+=b;pSold+=num(p.sold);targetDay+=num(p.daySold);quotaTotal+=num(p.quota);
   });
   const actualSold=pSold+targetDay+dayOther;
@@ -475,13 +479,15 @@ function recalculate(scroll=true){
   const staff=state.staff.reduce((a,s)=>a+num(s.day)+num(s.travel),0);
   const expenses=state.expenses.reduce((a,e)=>a+num(e.amount),0);
   const ticketSales=price*actualSold, otherRevenue=num(state.event.otherRevenue), revenue=ticketSales+collections+drinkSales+otherRevenue;
-  const profit=revenue-backs-staff-expenses;
+  const profit=revenue-backs-performerFees-staff-expenses;
   document.getElementById('performerSoldTotal').textContent=pSold.toLocaleString('ja-JP')+'枚';
   document.getElementById('performerBackTotal').textContent=yen(backs);
   document.getElementById('performerCollectionTotal').textContent=yen(collections);
+  const performerFeeEl=document.getElementById('performerFeeTotal'); if(performerFeeEl)performerFeeEl.textContent=yen(performerFees);
   document.getElementById('sumTicketSales').textContent=yen(ticketSales);
   document.getElementById('sumOtherRevenue').textContent=yen(otherRevenue);
   document.getElementById('sumBacks').textContent=yen(backs);
+  const feeEl=document.getElementById('sumPerformerFees'); if(feeEl)feeEl.textContent=yen(performerFees);
   document.getElementById('sumStaff').textContent=yen(staff);
   document.getElementById('sumExpenses').textContent=yen(expenses);
   document.getElementById('sumRevenue').textContent=yen(revenue);
@@ -527,19 +533,19 @@ function load(){
   state.event.dayOther=num(state.event.dayOther ?? state.event.totalSold);
   state.event.drinkPrice=num(state.event.drinkPrice ?? 600);
   state.event.totalSold=0;
-  state.performers=(state.performers||[]).map(p=>({...p,daySold:num(p.daySold)}));
+  state.performers=(state.performers||[]).map(p=>({...p,type:p.type||'normal',fee:num(p.fee),daySold:num(p.daySold)}));
   state.timetable=(state.timetable||[]).map(t=>({...t,part:Number(t.part)||1,cdNo:t.cdNo||'',cue:t.cue||''}));
   if(state.event.parts===1)state.timetable.forEach(t=>t.part=1);
   renderAll();
 }
 function shareSummary(){
   const price=num(state.event.ticketPrice),dayOther=num(state.event.dayOther);
-  let backs=0,collections=0,pSold=0,targetDay=0;
-  state.performers.forEach(p=>{const q=num(p.sold)+num(p.daySold);backs+=p.mode==='percent'?q*price*num(p.back)/100:Math.max(0,q-num(p.quota))*num(p.back);collections+=Math.max(0,num(p.quota)-q)*price;pSold+=num(p.sold);targetDay+=num(p.daySold)});
+  let backs=0,performerFees=0,collections=0,pSold=0,targetDay=0;
+  state.performers.forEach(p=>{const q=num(p.sold)+num(p.daySold);backs+=p.mode==='percent'?q*price*num(p.back)/100:Math.max(0,q-num(p.quota))*num(p.back);performerFees+=num(p.fee);collections+=Math.max(0,num(p.quota)-q)*price;pSold+=num(p.sold);targetDay+=num(p.daySold)});
   const actualSold=pSold+targetDay+dayOther,drink=actualSold*num(state.event.drinkPrice);
   const staff=state.staff.reduce((a,s)=>a+num(s.day)+num(s.travel),0);
   const exp=state.expenses.reduce((a,e)=>a+num(e.amount),0);
-  const revenue=price*actualSold+collections+drink+num(state.event.otherRevenue),profit=revenue-backs-staff-exp;
+  const revenue=price*actualSold+collections+drink+num(state.event.otherRevenue),profit=revenue-backs-performerFees-staff-exp;
   const text=`${state.event.name||'ライブ'}\n${state.event.date||''}\n\n実売枚数 ${actualSold}枚\nチケット売上 ${yen(price*actualSold)}\nノルマ回収 ${yen(collections)}\nドリンク売上 ${yen(drink)}\n総売上 ${yen(revenue)}\n出演者バック ${yen(backs)}\nスタッフ費 ${yen(staff)}\nその他経費 ${yen(exp)}\n利益 ${yen(profit)}`;
   if(navigator.share)navigator.share({title:state.event.name||'ライブ主催ツール',text}).catch(()=>{});
   else navigator.clipboard?.writeText(text).then(()=>alert('共有内容をコピーしました。'));
