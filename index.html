@@ -254,7 +254,7 @@ const KEY='liveOrganizerMultiV2';
 const OLD_KEY='liveOrganizerFullV1';
 let state={event:{name:'',date:'',venue:'',memo:'',parts:1,ticketPrice:3000,totalSold:0,dayOther:0,drinkPrice:600,otherRevenue:0},performers:[],staff:[],expenses:[],reservations:[],timetable:[]};
 let db={projects:[],currentId:null};
-let cloud={user:null,ready:false,liveUnsub:null,livesUnsub:null,liveId:null,role:null,suppress:false,saveTimer:null};
+let cloud={user:null,ready:false,liveUnsub:null,livesUnsub:null,liveId:null,role:null,suppress:false,saveTimer:null,pendingRemote:null};
 const FIREBASE_CONFIG={apiKey:"AIzaSyALG7PdhbRgNL2fkR8ZMuB6PaABxND4FK4",authDomain:"live-organizer-b9b1f.firebaseapp.com",projectId:"live-organizer-b9b1f",storageBucket:"live-organizer-b9b1f.firebasestorage.app",messagingSenderId:"691791540130",appId:"1:691791540130:web:48e1acc346d4e64b220cfb"};
 let fdb=null;
 function blankState(){return {event:{name:'',date:'',venue:'',memo:'',parts:1,ticketPrice:3000,totalSold:0,dayOther:0,drinkPrice:600,otherRevenue:0},performers:[{id:uid(),name:'',type:'normal',fee:0,quota:10,sold:0,daySold:0,mode:'fixed',back:1000}],staff:[],expenses:[],reservations:[],timetable:[]}}
@@ -555,64 +555,35 @@ function stopLiveWatch(){if(cloud.liveUnsub){cloud.liveUnsub();cloud.liveUnsub=n
 function stopLivesWatch(){if(cloud.livesUnsub){cloud.livesUnsub();cloud.livesUnsub=null}}
 function queueCloudSave(){if(!cloud.user||!cloud.liveId||cloud.role==='viewer'||cloud.suppress||!fdb)return;clearTimeout(cloud.saveTimer);cloud.saveTimer=setTimeout(()=>cloudPushCurrent(true),650)}
 async function cloudPushCurrent(silent=false){if(!cloud.user||!cloud.liveId){if(!silent)alert('先にログインして、ライブをクラウド保存してください。');return}if(cloud.role==='viewer'){if(!silent)alert('閲覧者は保存できません。');return}const p=currentProject();if(!p)return;try{const payload={name:state.event.name||p.name||'名前未設定',data:collectState(),updatedAt:firebase.firestore.FieldValue.serverTimestamp()};await fdb.collection('lives').doc(cloud.liveId).update(payload);p.cloudId=cloud.liveId;p.state=state;p.name=state.event.name||'名前未設定';try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}if(!silent)alert('☁️ クラウドに保存しました！')}catch(e){console.error(e);if(!silent)alert('クラウド保存に失敗しました。Firebaseのルールを確認してください。')}}
-function subscribeLive(liveId,role){stopLiveWatch();cloud.liveId=liveId;cloud.role=role;const p=projectForCloud(liveId);if(p){db.currentId=p.id;state=p.state}else{const np={id:uid(),cloudId:liveId,name:'共有ライブ',state:blankState()};db.projects.push(np);db.currentId=np.id;state=np.state}renderAll();cloud.liveUnsub=fdb.collection('lives').doc(liveId).onSnapshot(snap=>{if(!snap.exists)return;const d=snap.data();const r=cloudRoleFromDoc(d,cloud.user.uid);if(!r){stopLiveWatch();return}cloud.role=r;const cp=projectForCloud(liveId);if(cp){cloud.suppress=true;cp.name=d.name||'共有ライブ';cp.state=d.data||blankState();state=cp.state;db.currentId=cp.id;renderAll();try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}cloud.suppress=false}renderCloudUI();},e=>{console.error(e);cloudStatus('同期エラー','warn')});cloudStatus(role==='owner'?'クラウド接続中・オーナー':role==='editor'?'クラウド接続中・編集者':'クラウド接続中・閲覧者','ok');}
+function applyCloudSnapshot(d){
+  if(!d)return;
+  const cp=projectForCloud(cloud.liveId); if(!cp)return;
+  cloud.suppress=true;
+  cp.name=d.name||'共有ライブ';
+  cp.state=d.data||blankState();
+  state=cp.state; db.currentId=cp.id;
+  renderAll();
+  try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){}
+  cloud.suppress=false;
+  cloud.pendingRemote=null;
+}
+function activeTextEditor(){
+  const el=document.activeElement;
+  if(!el)return false;
+  const tag=el.tagName;
+  return tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||el.isContentEditable;
+}
+function flushPendingCloud(){
+  if(cloud.pendingRemote && !activeTextEditor()) applyCloudSnapshot(cloud.pendingRemote);
+}
+function subscribeLive(liveId,role){stopLiveWatch();cloud.liveId=liveId;cloud.role=role;cloud.pendingRemote=null;const p=projectForCloud(liveId);if(p){db.currentId=p.id;state=p.state}else{const np={id:uid(),cloudId:liveId,name:'共有ライブ',state:blankState()};db.projects.push(np);db.currentId=np.id;state=np.state}renderAll();cloud.liveUnsub=fdb.collection('lives').doc(liveId).onSnapshot(snap=>{if(!snap.exists)return;const d=snap.data();const r=cloudRoleFromDoc(d,cloud.user.uid);if(!r){stopLiveWatch();return}cloud.role=r;if(activeTextEditor()){cloud.pendingRemote=d}else{applyCloudSnapshot(d)}renderCloudUI();},e=>{console.error(e);cloudStatus('同期エラー','warn')});cloudStatus(role==='owner'?'クラウド接続中・オーナー':role==='editor'?'クラウド接続中・編集者':'クラウド接続中・閲覧者','ok');}
 function renderCloudUI(){const auth=document.getElementById('cloudAuthArea'),user=document.getElementById('cloudUserArea'),lives=document.getElementById('cloudLivesArea');if(!auth||!user)return;if(cloud.user){auth.classList.add('hidden');user.classList.remove('hidden');document.getElementById('cloudUserEmail').textContent=cloud.user.email||cloud.user.uid;document.getElementById('cloudRole').textContent=cloud.role?`権限：${cloud.role==='owner'?'オーナー':cloud.role==='editor'?'編集者':'閲覧者'}`:'未選択';document.getElementById('cloudHint').textContent=cloud.role==='viewer'?'閲覧・印刷・共有ができます。編集はオーナーまたは編集者のみ可能です。':cloud.role==='editor'?'このライブの内容を編集できます。':'ライブを作成・共有できます。';lives.classList.remove('hidden')}else{auth.classList.remove('hidden');user.classList.add('hidden');lives.classList.add('hidden')}}
 function renderCloudLives(docs){const box=document.getElementById('cloudLivesList');if(!box)return;if(!docs.length){box.innerHTML='<p class="muted">まだ共有ライブがありません。「このライブをクラウド保存」から始められます。</p>';return}box.innerHTML=docs.map(d=>{const data=d.data()||{},r=cloudRoleFromDoc(data,cloud.user.uid);return `<div class="project-chip"><strong>${esc(data.name||'名前未設定')}</strong><span>${esc(data.data?.event?.date||'日付未設定')} ${esc(data.data?.event?.venue||'')} ・ ${r==='owner'?'オーナー':r==='editor'?'編集者':'閲覧者'}</span><div class="actions"><button class="blue smallbtn" type="button" onclick="openCloudLive('${escAttr(d.id)}')">開く</button></div></div>`}).join('')}
 function openCloudLive(id){if(!cloud.user||!fdb)return;const p=projectForCloud(id);if(p){db.currentId=p.id;state=p.state;renderAll()}fdb.collection('lives').doc(id).get().then(s=>{if(!s.exists){alert('ライブが見つかりません。');return}const r=cloudRoleFromDoc(s.data(),cloud.user.uid);if(!r){alert('このライブへの権限がありません。');return}subscribeLive(id,r)}).catch(e=>alert('ライブを開けませんでした。'))}
-async function createCloudLive(){if(!cloud.user)return null;const id=uid()+uid();const now=firebase.firestore.FieldValue.serverTimestamp();const ref=fdb.collection('lives').doc(id);const data={ownerUid:cloud.user.uid,memberUids:[cloud.user.uid],roles:{[cloud.user.uid]:'owner'},name:state.event.name||'新しいライブ',data:collectState(),createdAt:now,updatedAt:now};await ref.set(data);return id}
+async function createCloudLive(){if(!cloud.user)return null;const id=uid()+uid();const now=firebase.firestore.FieldValue.serverTimestamp();const ref=fdb.collection('lives').doc(id);const data={ownerUid:cloud.user.uid,memberUids:[cloud.user.uid],roles:{[cloud.user.uid]:'owner'},name:state.event.name||'新しいライブ',data:collectState(),createdAt:now,updatedAt:now};await ref.set(data);await ref.collection('members').doc(cloud.user.uid).set({role:'owner',uid:cloud.user.uid});return id}
 async function createInvite(){if(!isOwner()){alert('招待リンクを作れるのはオーナーだけです。');return}const role=prompt('招待する権限を入力してください\nowner / editor / viewer\n\n通常は editor または viewer','editor');if(!role||!['editor','viewer'].includes(role))return;const token=uid()+uid()+uid();const expires=Date.now()+7*24*60*60*1000;try{await fdb.collection('invites').doc(token).set({liveId:cloud.liveId,role,createdBy:cloud.user.uid,expiresAt:firebase.firestore.Timestamp.fromMillis(expires),claimedBy:null,createdAt:firebase.firestore.FieldValue.serverTimestamp()});const url=location.origin+location.pathname+'#invite='+encodeURIComponent(token);const text=`Live Organizer「${state.event.name||'ライブ'}」への招待\n権限：${role==='editor'?'編集者':'閲覧者'}\n${url}`;document.getElementById('inviteArea').classList.remove('hidden');document.getElementById('inviteArea').innerHTML=`<div class="item"><h3>🔗 招待リンク（7日間有効）</h3><textarea readonly>${esc(text)}</textarea><div class="actions"><button class="primary smallbtn" type="button" onclick="shareInviteText()">📤 共有</button></div></div>`;window._inviteText=text;if(navigator.share){try{await navigator.share({title:'Live Organizer 招待',text})}catch(e){}}else alert('招待リンクを作りました。共有ボタンからLINEなどへ送れます。')}catch(e){alert('招待リンクの作成に失敗しました。')}}
 function shareInviteText(){const t=window._inviteText||'';if(navigator.share)navigator.share({title:'Live Organizer 招待',text:t}).catch(()=>{});else if(navigator.clipboard)navigator.clipboard.writeText(t).then(()=>alert('招待文をコピーしました。'))}
-async function acceptInvite(token){
-  if(!cloud.user||!fdb)return;
-  let stage='招待を確認中';
-  try{
-    const ref=fdb.collection('invites').doc(token);
-    const snap=await ref.get();
-    if(!snap.exists){alert('招待リンクが見つかりません。');return}
-    let inv=snap.data();
-    const exp=inv.expiresAt&&typeof inv.expiresAt.toMillis==='function'?inv.expiresAt.toMillis():Number(inv.expiresAt);
-    if(exp&&exp<Date.now()){alert('この招待リンクは期限切れです。');return}
-    if(inv.claimedBy){
-      if(inv.claimedBy===cloud.user.uid){
-        alert('この招待リンクはすでにこのアカウントで使用されています。');
-      }else{
-        alert('この招待リンクはすでに使用されています。');
-      }
-      return;
-    }
-
-    const liveRef=fdb.collection('lives').doc(inv.liveId);
-    const memberRef=liveRef.collection('members').doc(cloud.user.uid);
-    stage='招待・メンバー・ライブを一括更新中';
-    const batch=fdb.batch();
-
-    // 3つを同じbatchで原子的に更新する。
-    batch.update(ref,{
-      claimedBy:cloud.user.uid,
-      claimedAt:firebase.firestore.FieldValue.serverTimestamp()
-    });
-    batch.set(memberRef,{
-      role:inv.role,
-      uid:cloud.user.uid,
-      inviteId:token,
-      createdAt:firebase.firestore.FieldValue.serverTimestamp()
-    });
-    batch.update(liveRef,{
-      memberUids:firebase.firestore.FieldValue.arrayUnion(cloud.user.uid),
-      [`roles.${cloud.user.uid}`]:inv.role,
-      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
-    });
-
-    await batch.commit();
-    stage='完了';
-    location.hash='';
-    alert('招待を受け入れました！');
-    openCloudLive(inv.liveId);
-  }catch(e){
-    console.error('acceptInvite',e);
-    alert('招待を受け入れられませんでした。もう一度新しい招待リンクで試してください。\n\n失敗箇所: '+stage+'\n原因: '+(e&&e.code?e.code:'権限または招待処理のエラー'));
-  }
-}
+async function acceptInvite(token){if(!cloud.user||!fdb)return;try{const ref=fdb.collection('invites').doc(token),snap=await ref.get();if(!snap.exists){alert('招待リンクが見つかりません。');return}let inv=snap.data();const exp=inv.expiresAt&&typeof inv.expiresAt.toMillis==='function'?inv.expiresAt.toMillis():Number(inv.expiresAt);if(exp&&exp<Date.now()){alert('この招待リンクは期限切れです。');return}if(inv.claimedBy&&inv.claimedBy!==cloud.user.uid){alert('この招待リンクはすでに使用されています。');return}if(!inv.claimedBy){await ref.update({claimedBy:cloud.user.uid,claimedAt:firebase.firestore.FieldValue.serverTimestamp()});const again=await ref.get();if(!again.exists||again.data().claimedBy!==cloud.user.uid)throw new Error('INVITE_CLAIM_FAILED');inv=again.data()}const liveRef=fdb.collection('lives').doc(inv.liveId),memberRef=liveRef.collection('members').doc(cloud.user.uid);const liveSnap=await liveRef.get();if(!liveSnap.exists)throw new Error('LIVE_NOT_FOUND');const live=liveSnap.data()||{};const batch=fdb.batch();batch.set(memberRef,{role:inv.role,uid:cloud.user.uid,inviteId:token,createdAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});batch.update(liveRef,{memberUids:firebase.firestore.FieldValue.arrayUnion(cloud.user.uid),roles:{...(live.roles||{}),[cloud.user.uid]:inv.role},updatedAt:firebase.firestore.FieldValue.serverTimestamp()});await batch.commit();location.hash='';alert('招待を受け入れました！');openCloudLive(inv.liveId)}catch(e){console.error('acceptInvite',e);alert('招待を受け入れられませんでした。もう一度新しい招待リンクで試してください。\n\n原因: '+(e&&e.code?e.code:'権限または招待処理のエラー'))}}
 async function cloudLogin(){const email=document.getElementById('authEmail').value.trim(),pw=document.getElementById('authPassword').value;if(!email||!pw){alert('メールアドレスとパスワードを入力してください。');return}try{await firebase.auth().signInWithEmailAndPassword(email,pw)}catch(e){alert('ログインできませんでした。メールアドレスとパスワードを確認してください。')}}
 async function cloudSignup(){const email=document.getElementById('authEmail').value.trim(),pw=document.getElementById('authPassword').value;if(!email||pw.length<6){alert('メールアドレスと6文字以上のパスワードを入力してください。');return}try{await firebase.auth().createUserWithEmailAndPassword(email,pw)}catch(e){alert('新規登録できませんでした。すでに登録済みなら「ログイン」を使ってください。')}}
 function cloudSignOut(){firebase.auth().signOut()}
@@ -666,6 +637,7 @@ load();
 initFirebase();
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{});}
 setInterval(()=>renderTimeline(),60000);
+document.addEventListener('focusout',()=>setTimeout(flushPendingCloud,0));
 </script>
 </body>
 </html>
