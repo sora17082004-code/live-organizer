@@ -562,7 +562,57 @@ function openCloudLive(id){if(!cloud.user||!fdb)return;const p=projectForCloud(i
 async function createCloudLive(){if(!cloud.user)return null;const id=uid()+uid();const now=firebase.firestore.FieldValue.serverTimestamp();const ref=fdb.collection('lives').doc(id);const data={ownerUid:cloud.user.uid,memberUids:[cloud.user.uid],roles:{[cloud.user.uid]:'owner'},name:state.event.name||'新しいライブ',data:collectState(),createdAt:now,updatedAt:now};await ref.set(data);await ref.collection('members').doc(cloud.user.uid).set({role:'owner',uid:cloud.user.uid});return id}
 async function createInvite(){if(!isOwner()){alert('招待リンクを作れるのはオーナーだけです。');return}const role=prompt('招待する権限を入力してください\nowner / editor / viewer\n\n通常は editor または viewer','editor');if(!role||!['editor','viewer'].includes(role))return;const token=uid()+uid()+uid();const expires=Date.now()+7*24*60*60*1000;try{await fdb.collection('invites').doc(token).set({liveId:cloud.liveId,role,createdBy:cloud.user.uid,expiresAt:firebase.firestore.Timestamp.fromMillis(expires),claimedBy:null,createdAt:firebase.firestore.FieldValue.serverTimestamp()});const url=location.origin+location.pathname+'#invite='+encodeURIComponent(token);const text=`Live Organizer「${state.event.name||'ライブ'}」への招待\n権限：${role==='editor'?'編集者':'閲覧者'}\n${url}`;document.getElementById('inviteArea').classList.remove('hidden');document.getElementById('inviteArea').innerHTML=`<div class="item"><h3>🔗 招待リンク（7日間有効）</h3><textarea readonly>${esc(text)}</textarea><div class="actions"><button class="primary smallbtn" type="button" onclick="shareInviteText()">📤 共有</button></div></div>`;window._inviteText=text;if(navigator.share){try{await navigator.share({title:'Live Organizer 招待',text})}catch(e){}}else alert('招待リンクを作りました。共有ボタンからLINEなどへ送れます。')}catch(e){alert('招待リンクの作成に失敗しました。')}}
 function shareInviteText(){const t=window._inviteText||'';if(navigator.share)navigator.share({title:'Live Organizer 招待',text:t}).catch(()=>{});else if(navigator.clipboard)navigator.clipboard.writeText(t).then(()=>alert('招待文をコピーしました。'))}
-async function acceptInvite(token){if(!cloud.user||!fdb)return;try{const ref=fdb.collection('invites').doc(token),snap=await ref.get();if(!snap.exists){alert('招待リンクが見つかりません。');return}let inv=snap.data();const exp=inv.expiresAt&&typeof inv.expiresAt.toMillis==='function'?inv.expiresAt.toMillis():Number(inv.expiresAt);if(exp&&exp<Date.now()){alert('この招待リンクは期限切れです。');return}if(inv.claimedBy&&inv.claimedBy!==cloud.user.uid){alert('この招待リンクはすでに使用されています。');return}if(!inv.claimedBy){await ref.update({claimedBy:cloud.user.uid,claimedAt:firebase.firestore.FieldValue.serverTimestamp()});const again=await ref.get();if(!again.exists||again.data().claimedBy!==cloud.user.uid)throw new Error('INVITE_CLAIM_FAILED');inv=again.data()}const liveRef=fdb.collection('lives').doc(inv.liveId),memberRef=liveRef.collection('members').doc(cloud.user.uid);const liveSnap=await liveRef.get();if(!liveSnap.exists)throw new Error('LIVE_NOT_FOUND');const live=liveSnap.data()||{};const batch=fdb.batch();batch.set(memberRef,{role:inv.role,uid:cloud.user.uid,inviteId:token,createdAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});batch.update(liveRef,{memberUids:firebase.firestore.FieldValue.arrayUnion(cloud.user.uid),roles:{...(live.roles||{}),[cloud.user.uid]:inv.role},updatedAt:firebase.firestore.FieldValue.serverTimestamp()});await batch.commit();location.hash='';alert('招待を受け入れました！');openCloudLive(inv.liveId)}catch(e){console.error('acceptInvite',e);alert('招待を受け入れられませんでした。もう一度新しい招待リンクで試してください。\n\n原因: '+(e&&e.code?e.code:'権限または招待処理のエラー'))}}
+async function acceptInvite(token){
+  if(!cloud.user||!fdb)return;
+  let stage='招待を確認中';
+  try{
+    const ref=fdb.collection('invites').doc(token);
+    const snap=await ref.get();
+    if(!snap.exists){alert('招待リンクが見つかりません。');return}
+    let inv=snap.data();
+    const exp=inv.expiresAt&&typeof inv.expiresAt.toMillis==='function'?inv.expiresAt.toMillis():Number(inv.expiresAt);
+    if(exp&&exp<Date.now()){alert('この招待リンクは期限切れです。');return}
+    if(inv.claimedBy){
+      if(inv.claimedBy===cloud.user.uid){
+        alert('この招待リンクはすでにこのアカウントで使用されています。');
+      }else{
+        alert('この招待リンクはすでに使用されています。');
+      }
+      return;
+    }
+
+    const liveRef=fdb.collection('lives').doc(inv.liveId);
+    const memberRef=liveRef.collection('members').doc(cloud.user.uid);
+    stage='招待・メンバー・ライブを一括更新中';
+    const batch=fdb.batch();
+
+    // 3つを同じbatchで原子的に更新する。
+    batch.update(ref,{
+      claimedBy:cloud.user.uid,
+      claimedAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    batch.set(memberRef,{
+      role:inv.role,
+      uid:cloud.user.uid,
+      inviteId:token,
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    batch.update(liveRef,{
+      memberUids:firebase.firestore.FieldValue.arrayUnion(cloud.user.uid),
+      [`roles.${cloud.user.uid}`]:inv.role,
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    await batch.commit();
+    stage='完了';
+    location.hash='';
+    alert('招待を受け入れました！');
+    openCloudLive(inv.liveId);
+  }catch(e){
+    console.error('acceptInvite',e);
+    alert('招待を受け入れられませんでした。もう一度新しい招待リンクで試してください。\n\n失敗箇所: '+stage+'\n原因: '+(e&&e.code?e.code:'権限または招待処理のエラー'));
+  }
+}
 async function cloudLogin(){const email=document.getElementById('authEmail').value.trim(),pw=document.getElementById('authPassword').value;if(!email||!pw){alert('メールアドレスとパスワードを入力してください。');return}try{await firebase.auth().signInWithEmailAndPassword(email,pw)}catch(e){alert('ログインできませんでした。メールアドレスとパスワードを確認してください。')}}
 async function cloudSignup(){const email=document.getElementById('authEmail').value.trim(),pw=document.getElementById('authPassword').value;if(!email||pw.length<6){alert('メールアドレスと6文字以上のパスワードを入力してください。');return}try{await firebase.auth().createUserWithEmailAndPassword(email,pw)}catch(e){alert('新規登録できませんでした。すでに登録済みなら「ログイン」を使ってください。')}}
 function cloudSignOut(){firebase.auth().signOut()}
