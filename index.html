@@ -281,13 +281,30 @@ function dateToday(){return new Date().toISOString().slice(0,10)}
 function addPerformer(d={}){if(!canEdit())return;state.performers.push({id:uid(),name:'',type:'normal',fee:0,quota:10,sold:0,daySold:0,mode:'fixed',back:1000,...d});renderAll() }
 function addStaff(d={}){if(!canEdit())return;state.staff.push({id:uid(),name:'',role:'',day:0,travel:0,...d});renderAll() }
 function addExpense(d={}){if(!canEdit())return;state.expenses.push({id:uid(),name:'',amount:0,...d});renderAll() }
-function addReservation(d={}){if(!canEdit())return;state.reservations.push({id:uid(),name:'',count:1,from:'',checked:false,...d});renderAll() }
+function reservationSoldByPerformer(){
+  const totals={};
+  (state.reservations||[]).forEach(r=>{
+    if(!r.checked)return;
+    const from=(r.from||'').trim();
+    if(!from||from==='その他・未指定')return;
+    totals[from]=(totals[from]||0)+Math.max(0,num(r.count));
+  });
+  return totals;
+}
+function performerHoldSold(p,totals){return Math.max(0,num((totals||reservationSoldByPerformer())[p.name]||0));}
+function syncPerformerSoldFromReservations(){
+  const totals=reservationSoldByPerformer();
+  state.performers.forEach(p=>{p.sold=performerHoldSold(p,totals)});
+}
+function addReservation(d={}){if(!canEdit())return;state.reservations.push({id:uid(),name:'',count:1,from:'',checked:false,...d});syncPerformerSoldFromReservations();renderAll() }
 function addTimetable(d={}){if(!canEdit())return;state.timetable.push({id:uid(),time:'18:00',who:'',cdNo:'',cue:'',note:'',part:1,...d});renderAll() }
 
 function removeItem(type,id){if(!canEdit())return;state[type]=state[type].filter(x=>x.id!==id); renderAll();}
 function update(type,id,key,value){
   if(!canEdit())return;
-  const x=state[type].find(x=>x.id===id); if(x){const oldName=x.name;x[key]=value;if(type==='performers'&&key==='name'&&oldName&&oldName!==value){state.reservations.forEach(r=>{if(r.from===oldName)r.from=value})} autoSave(); recalculate(false);if(type==='performers'&&key==='name')renderReservations()}
+  const x=state[type].find(x=>x.id===id); if(x){const oldName=x.name;x[key]=value;if(type==='performers'&&key==='name'&&oldName&&oldName!==value){state.reservations.forEach(r=>{if(r.from===oldName)r.from=value})}
+    if(type==='reservations'&&(key==='checked'||key==='count'||key==='from')){syncPerformerSoldFromReservations();renderPerformers()}
+    autoSave(); recalculate(false);if(type==='performers'&&key==='name')renderReservations()}
 }
 function bindEventInputs(){
   const map={eventName:['name'],eventDate:['date'],venue:['venue'],eventMemo:['memo'],ticketPrice:['ticketPrice','number'],dayOther:['dayOther','number'],drinkPrice:['drinkPrice','number'],otherRevenue:['otherRevenue','number']};
@@ -311,8 +328,10 @@ function bindEventInputs(){
 function renderPerformers(){
   const box=document.getElementById('performers');
   if(!state.performers.length){box.innerHTML='<p class="muted">まだ出演者がありません。「出演者追加」から登録してください。</p>';return}
+  const soldTotals=reservationSoldByPerformer();
   box.innerHTML=state.performers.map((p,i)=>{
-    const quotaSales=num(p.sold)+num(p.daySold);
+    const holdSold=performerHoldSold(p,soldTotals);
+    const quotaSales=holdSold+num(p.daySold);
     const back=p.mode==='percent'?quotaSales*num(state.event.ticketPrice)*p.back/100:Math.max(0,quotaSales-num(p.quota))*num(p.back);
     const shortage=Math.max(0,num(p.quota)-quotaSales);
     const collection=shortage*num(state.event.ticketPrice);
@@ -323,14 +342,14 @@ function renderPerformers(){
         <div><label>出演区分</label><select onchange="update('performers','${p.id}','type',this.value)"><option value="normal" ${p.type!=='guest'?'selected':''}>通常</option><option value="guest" ${p.type==='guest'?'selected':''}>ゲスト</option></select></div>
         <div><label>出演料</label><input type="number" min="0" value="${num(p.fee)}" oninput="update('performers','${p.id}','fee',num(this.value))"></div>
         <div><label>ノルマ</label><input type="number" min="0" value="${p.quota}" oninput="update('performers','${p.id}','quota',num(this.value))"></div>
-        <div><label>取り置き・売上枚数</label><input type="number" min="0" value="${p.sold}" oninput="update('performers','${p.id}','sold',num(this.value))"></div>
+        <div><label>取り置き・売上枚数（受付済み自動）</label><input type="number" min="0" value="${holdSold}" readonly></div>
         <div><label>当日券・${esc(p.name||'この出演者')}目当て</label><input type="number" min="0" value="${num(p.daySold)}" oninput="update('performers','${p.id}','daySold',num(this.value))"></div>
         <div><label>バック方式</label><select onchange="update('performers','${p.id}','mode',this.value)"><option value="fixed" ${p.mode==='fixed'?'selected':''}>超過×固定額</option><option value="percent" ${p.mode==='percent'?'selected':''}>売上％</option></select></div>
         <div><label>${p.mode==='percent'?'バック率(%)':'超過1枚あたり'}</label><input type="number" min="0" value="${p.back}" oninput="update('performers','${p.id}','back',num(this.value))"></div>
         <div><label>バック予定</label><div class="result-box">${yen(back)}</div></div>
         <div><label>ノルマ未達・回収額</label><div class="result-box">${yen(collection)}</div></div>
       </div>
-      <div class="muted" style="margin-top:8px">ノルマ集計：${quotaSales}枚（取り置き ${num(p.sold)}＋当日目当て ${num(p.daySold)}） / ノルマ差：${quotaSales-num(p.quota)}枚 / 未達：${shortage}枚 / バック予定：${yen(back)} / 回収額：${yen(collection)}</div>
+      <div class="muted" style="margin-top:8px">ノルマ集計：${quotaSales}枚（取り置き ${holdSold}＋当日目当て ${num(p.daySold)}） / ノルマ差：${quotaSales-num(p.quota)}枚 / 未達：${shortage}枚 / バック予定：${yen(back)} / 回収額：${yen(collection)}</div>
     </div>`
   }).join('');
 }
@@ -495,13 +514,15 @@ function renderTimeline(){
 function recalculate(scroll=true){
   const price=num(state.event.ticketPrice), dayOther=num(state.event.dayOther);
   let backs=0, performerFees=0, pSold=0, targetDay=0, collections=0, quotaTotal=0;
+  const soldTotals=reservationSoldByPerformer();
   state.performers.forEach(p=>{
-    const quotaSales=num(p.sold)+num(p.daySold);
+    const holdSold=performerHoldSold(p,soldTotals);
+    const quotaSales=holdSold+num(p.daySold);
     const b=p.mode==='percent'?quotaSales*price*num(p.back)/100:Math.max(0,quotaSales-num(p.quota))*num(p.back);
     const shortage=Math.max(0,num(p.quota)-quotaSales);
     collections+=shortage*price;
     performerFees+=num(p.fee);
-    backs+=b;pSold+=num(p.sold);targetDay+=num(p.daySold);quotaTotal+=num(p.quota);
+    backs+=b;pSold+=holdSold;targetDay+=num(p.daySold);quotaTotal+=num(p.quota);
   });
   const actualSold=pSold+targetDay+dayOther;
   const drinkSales=actualSold*num(state.event.drinkPrice);
@@ -539,6 +560,7 @@ function updateReservationSummary(){
 }
 function renderAll(){
   ensureCurrentProject();
+  syncPerformerSoldFromReservations();
   renderProjectManager();
   bindEventInputs();renderPerformers();renderStaff();renderExpenses();renderReservations();renderTimetableEdit();renderTimeline();recalculate(false);autoSave();
 }
@@ -616,7 +638,8 @@ function load(){
 function shareSummary(){
   const price=num(state.event.ticketPrice),dayOther=num(state.event.dayOther);
   let backs=0,performerFees=0,collections=0,pSold=0,targetDay=0;
-  state.performers.forEach(p=>{const q=num(p.sold)+num(p.daySold);backs+=p.mode==='percent'?q*price*num(p.back)/100:Math.max(0,q-num(p.quota))*num(p.back);performerFees+=num(p.fee);collections+=Math.max(0,num(p.quota)-q)*price;pSold+=num(p.sold);targetDay+=num(p.daySold)});
+  const soldTotals=reservationSoldByPerformer();
+  state.performers.forEach(p=>{const holdSold=performerHoldSold(p,soldTotals);const q=holdSold+num(p.daySold);backs+=p.mode==='percent'?q*price*num(p.back)/100:Math.max(0,q-num(p.quota))*num(p.back);performerFees+=num(p.fee);collections+=Math.max(0,num(p.quota)-q)*price;pSold+=holdSold;targetDay+=num(p.daySold)});
   const actualSold=pSold+targetDay+dayOther,drink=actualSold*num(state.event.drinkPrice);
   const staff=state.staff.reduce((a,s)=>a+num(s.day)+num(s.travel),0);
   const exp=state.expenses.reduce((a,e)=>a+num(e.amount),0);
